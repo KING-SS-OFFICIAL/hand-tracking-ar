@@ -43,7 +43,7 @@ let recording=false, mRec=null, chunks=[];
 let recStart=0, recTimer=null;
 let modes={pose:true,face:true,hands:true,iris:true};
 let lastPose=null, lastFace=null;
-let appStarted=false, frameBusy=false;
+let appStarted=false, frameCount=0;
 
 // ─── DOM ─────────────────────────────────────────────────────────
 const vid=document.getElementById("webcam");
@@ -353,7 +353,86 @@ function renderLoop(){
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  MODEL LOADING — wait for real readiness, not a fake timeout
+//  CAMERA — direct getUserMedia (reliable front/rear switching)
+// ═══════════════════════════════════════════════════════════════════
+
+let cameraStream = null;
+let frameLoopId = null;
+
+async function startCamera(fMode) {
+  // stop existing
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  if (frameLoopId) {
+    cancelAnimationFrame(frameLoopId);
+    frameLoopId = null;
+  }
+
+  // try specific constraints first, fall back to simple
+  const constraints = [
+    { video: { facingMode: { exact: fMode }, width: { ideal: 480 }, height: { ideal: 360 } } },
+    { video: { facingMode: fMode, width: { ideal: 480 }, height: { ideal: 360 } } },
+    { video: { facingMode: fMode } },
+  ];
+
+  for (const c of constraints) {
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia(c);
+      log(`Camera started with: ${JSON.stringify(c.video)}`);
+      break;
+    } catch (e) {
+      log(`Camera constraint failed: ${e.message}`);
+    }
+  }
+
+  if (!cameraStream) {
+    throw new Error("Could not access camera");
+  }
+
+  vid.srcObject = cameraStream;
+  await vid.play();
+  log(`Video playing: ${vid.videoWidth}x${vid.videoHeight}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  FRAME LOOP — staggered model processing for high FPS
+// ═══════════════════════════════════════════════════════════════════
+
+// Model processing runs on different frame intervals:
+//   Hands: every 1st frame  (fast, ~5ms)
+//   Pose:  every 3rd frame  (medium, ~15ms)
+//   Face:  every 3rd frame  (offset, ~15ms)
+
+let processingHands = false, processingPose = false, processingFace = false;
+
+async function frameLoop() {
+  frameCount++;
+
+  // Hands — every frame
+  if (handsInst && modes.hands && !processingHands) {
+    processingHands = true;
+    handsInst.send({ image: vid }).catch(() => {}).finally(() => { processingHands = false; });
+  }
+
+  // Pose — every 3rd frame
+  if (poseInst && modes.pose && frameCount % 3 === 0 && !processingPose) {
+    processingPose = true;
+    poseInst.send({ image: vid }).catch(() => {}).finally(() => { processingPose = false; });
+  }
+
+  // Face — every 3rd frame (offset by 1)
+  if (faceInst && (modes.face || modes.iris) && frameCount % 3 === 1 && !processingFace) {
+    processingFace = true;
+    faceInst.send({ image: vid }).catch(() => {}).finally(() => { processingFace = false; });
+  }
+
+  frameLoopId = requestAnimationFrame(frameLoop);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  MODEL LOADING — wait for real readiness
 // ═══════════════════════════════════════════════════════════════════
 
 function loadMPModel(name, className, cdnPkg, options, onCb) {
@@ -367,36 +446,28 @@ function loadMPModel(name, className, cdnPkg, options, onCb) {
       });
 
       inst.setOptions(options);
-      inst.onResults(onCb);
 
-      // The model is ready once the first onResults fires (WASM loaded)
-      // We use a timeout fallback of 10 seconds
       let resolved = false;
-      const origCb = onCb;
       const wrappedCb = (res) => {
         if (!resolved) {
           resolved = true;
-          log(`${name} ready! (first callback received)`);
-          // restore original callback
+          log(`${name} ready!`);
           inst.onResults(onCb);
           resolve(inst);
         }
-        origCb(res);
+        onCb(res);
       };
       inst.onResults(wrappedCb);
 
-      // Trigger one dummy send to kick off WASM loading
-      // Create a tiny test canvas to trigger initialization
-      const testCanvas = document.createElement("canvas");
-      testCanvas.width = 16;
-      testCanvas.height = 16;
-      try { inst.send({ image: testCanvas }); } catch(e) { /* ok */ }
+      // trigger init
+      const tc = document.createElement("canvas");
+      tc.width = 16; tc.height = 16;
+      try { inst.send({ image: tc }); } catch(e) {}
 
-      // Fallback timeout
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          log(`${name} timeout after 10s — proceeding anyway (model may still work)`);
+          log(`${name} timeout — proceeding`);
           inst.onResults(onCb);
           resolve(inst);
         }
@@ -449,37 +520,19 @@ async function start() {
       minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
     }, onFaceResults);
 
-    // 3) Start camera
+    // 3) Start camera with direct getUserMedia
     log("Starting camera feed...");
     sEl.textContent = "STARTING CAM...";
 
-    cam = new Camera(vid, {
-      onFrame: async () => {
-        if (frameBusy) return; // skip if previous frame still processing
-        frameBusy = true;
-        try {
-          const p = [];
-          if (handsInst && modes.hands) p.push(handsInst.send({ image: vid }).catch(e => log("Hands send error: " + e.message)));
-          if (poseInst && modes.pose) p.push(poseInst.send({ image: vid }).catch(e => log("Pose send error: " + e.message)));
-          if (faceInst && (modes.face || modes.iris)) p.push(faceInst.send({ image: vid }).catch(e => log("Face send error: " + e.message)));
-          await Promise.all(p);
-        } catch(e) {
-          log("Frame error: " + e.message);
-        }
-        frameBusy = false;
-      },
-      width: 640, height: 480, facingMode: facing,
-    });
-    await cam.start();
-
-    log("Camera started. Video dimensions: " + vid.videoWidth + "x" + vid.videoHeight);
-    log("=== INIT COMPLETE ===");
+    await startCamera(facing);
+    log("Camera started. Starting frame loop...");
 
     sEl.textContent = P.name;
     sEl.style.borderColor = P.primary;
     sEl.style.color = P.primary;
     setupModes();
-    renderLoop();
+    frameLoop();  // start sending frames to models
+    renderLoop(); // start rendering
 
   } catch (err) {
     log("FATAL ERROR: " + err.message);
@@ -515,14 +568,15 @@ function setupModes(){
 async function switchCam(){
   facing=facing==="user"?"environment":"user";
   sEl.textContent=facing==="user"?"FRONT":"REAR";
-  if(cam)cam.stop();
-  vid.srcObject?.getTracks().forEach(t=>t.stop());
-  smoothBuf=[]; lastPose=null; lastFace=null; frameBusy=false;
-  cam=new Camera(vid,{
-    onFrame:async()=>{if(frameBusy)return;frameBusy=true;try{const p=[];if(handsInst&&modes.hands)p.push(handsInst.send({image:vid}).catch(()=>{}));if(poseInst&&modes.pose)p.push(poseInst.send({image:vid}).catch(()=>{}));if(faceInst&&(modes.face||modes.iris))p.push(faceInst.send({image:vid}).catch(()=>{}));await Promise.all(p);}catch(e){}frameBusy=false;},
-    width:640,height:480,facingMode:facing,
-  });
-  await cam.start();
+  smoothBuf=[]; lastPose=null; lastFace=null;
+  try {
+    await startCamera(facing);
+  } catch(e) {
+    log("Camera switch failed: " + e.message);
+    // revert
+    facing=facing==="user"?"environment":"user";
+    sEl.textContent=facing==="user"?"FRONT":"REAR";
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
