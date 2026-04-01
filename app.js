@@ -61,6 +61,7 @@ let recStart=0, recTimer=null;
 let modes = { pose:true, face:true, hands:true, iris:true };
 let poseReady=false, faceReady=false;
 let lastPose=null, lastFace=null;
+let appStarted = false;
 
 // ─── DOM ─────────────────────────────────────────────────────────
 const vid=document.getElementById("webcam");
@@ -514,13 +515,11 @@ async function switchCam(){
 
   cam = new Camera(vid, {
     onFrame: async()=>{
-      const promises = [];
-      if(handsInst && modes.hands) promises.push(handsInst.send({image:vid}));
-      if(poseInst && modes.pose) promises.push(poseInst.send({image:vid}));
-      if(faceInst && (modes.face || modes.iris)) promises.push(faceInst.send({image:vid}));
-      await Promise.all(promises);
+      safeSend(handsInst, vid);
+      safeSend(poseInst, vid);
+      safeSend(faceInst, vid);
     },
-    width:1280, height:720, facingMode:facing,
+    width:640, height:480, facingMode:facing,
   });
   await cam.start();
 }
@@ -587,47 +586,107 @@ document.addEventListener("keydown",e=>{
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  INIT
+//  INIT — sequential model loading with error handling
 // ═══════════════════════════════════════════════════════════════════
 
-async function start(){
-  startO.classList.add("hidden");
-  sEl.textContent="LOADING MODELS...";
-
-  // ── Hands ──────────────────────────────────────────────────
-  handsInst = new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`});
-  handsInst.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:0.75,minTrackingConfidence:0.65});
-  handsInst.onResults(onHandResults);
-
-  // ── Pose ───────────────────────────────────────────────────
-  poseInst = new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}`});
-  poseInst.setOptions({modelComplexity:1,smoothLandmarks:true,enableSegmentation:false,minDetectionConfidence:0.6,minTrackingConfidence:0.6});
-  poseInst.onResults(onPoseResults);
-
-  // ── Face Mesh (+ iris) ─────────────────────────────────────
-  faceInst = new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`});
-  faceInst.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.6,minTrackingConfidence:0.6});
-  faceInst.onResults(onFaceResults);
-
-  sEl.textContent="STARTING CAM...";
-  cam = new Camera(vid,{
-    onFrame: async()=>{
-      const p=[];
-      if(modes.hands) p.push(handsInst.send({image:vid}));
-      if(modes.pose) p.push(poseInst.send({image:vid}));
-      if(modes.face||modes.iris) p.push(faceInst.send({image:vid}));
-      await Promise.all(p);
-    },
-    width:1280, height:720, facingMode:facing,
-  });
-  await cam.start();
-
-  sEl.textContent=P.name; sEl.style.borderColor=P.primary; sEl.style.color=P.primary;
-  setupModes();
-  renderLoop(); // start the render loop
+function safeSend(inst, img) {
+  if (!inst) return;
+  try { return inst.send({ image: img }).catch(() => {}); }
+  catch (e) { /* model not ready yet */ }
 }
 
-startB.addEventListener("click",start);
-bCam.addEventListener("click",switchCam);
-bRec.addEventListener("click",()=>{recording?stopRec():startRec();});
-bFS.addEventListener("click",toggleFS);
+function loadModel(name, createFn) {
+  return new Promise((resolve, reject) => {
+    sEl.textContent = `LOADING ${name}...`;
+    try {
+      const inst = createFn();
+      // many MediaPipe solutions fire a ready callback via the first onResults
+      // give it time to initialize its WASM/worker
+      setTimeout(() => resolve(inst), 1500);
+    } catch (e) {
+      console.error(`Failed to create ${name}:`, e);
+      resolve(null); // don't block other models
+    }
+  });
+}
+
+async function start() {
+  if (appStarted) return;
+  appStarted = true;
+  startO.classList.add("hidden");
+  sEl.textContent = "INIT...";
+
+  try {
+    // ── Load Hands ──────────────────────────────────────────────
+    handsInst = await loadModel("HANDS", () => {
+      const h = new Hands({
+        locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`,
+      });
+      h.setOptions({
+        maxNumHands: 2, modelComplexity: 1,
+        minDetectionConfidence: 0.7, minTrackingConfidence: 0.6,
+      });
+      h.onResults(onHandResults);
+      return h;
+    });
+
+    // ── Load Pose ───────────────────────────────────────────────
+    poseInst = await loadModel("POSE", () => {
+      const p = new Pose({
+        locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}`,
+      });
+      p.setOptions({
+        modelComplexity: 0, // lightweight for speed
+        smoothLandmarks: true, enableSegmentation: false,
+        minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+      });
+      p.onResults(onPoseResults);
+      return p;
+    });
+
+    // ── Load Face Mesh ──────────────────────────────────────────
+    faceInst = await loadModel("FACE", () => {
+      const f = new FaceMesh({
+        locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}`,
+      });
+      f.setOptions({
+        maxNumFaces: 1, refineLandmarks: true,
+        minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+      });
+      f.onResults(onFaceResults);
+      return f;
+    });
+
+    sEl.textContent = "STARTING CAM...";
+
+    // ── Start Camera ────────────────────────────────────────────
+    cam = new Camera(vid, {
+      onFrame: async () => {
+        // each model processes independently — one failure doesn't block others
+        safeSend(handsInst, vid);
+        safeSend(poseInst, vid);
+        safeSend(faceInst, vid);
+      },
+      width: 640, height: 480,
+      facingMode: facing,
+    });
+    await cam.start();
+
+    sEl.textContent = P.name;
+    sEl.style.borderColor = P.primary;
+    sEl.style.color = P.primary;
+    setupModes();
+    renderLoop();
+
+  } catch (err) {
+    console.error("Init error:", err);
+    sEl.textContent = "ERROR — RETRY";
+    sEl.style.borderColor = "#ff4444";
+    sEl.style.color = "#ff4444";
+  }
+}
+
+startB.addEventListener("click", start);
+bCam.addEventListener("click", switchCam);
+bRec.addEventListener("click", () => { recording ? stopRec() : startRec(); });
+bFS.addEventListener("click", toggleFS);
