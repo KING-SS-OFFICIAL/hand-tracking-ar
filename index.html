@@ -7,33 +7,49 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>HAND-TRACKING <span class="accent">AR</span></h1>
-      <div id="status">INITIALIZING...</div>
-    </header>
+  <div id="viewport">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <canvas id="text-layer"></canvas>
 
-    <div id="viewport">
-      <video id="webcam" autoplay playsinline></video>
-      <canvas id="overlay"></canvas>
-      <div id="hud-top-left">
-        <div class="hud-row"><span class="hud-label">FPS</span><span id="fps">0</span></div>
-        <div class="hud-row"><span class="hud-label">HANDS</span><span id="hand-count">0</span></div>
-        <div class="hud-row"><span class="hud-label">GESTURE</span><span id="gesture-name">NONE</span></div>
-        <div class="hud-row"><span class="hud-label">PARTICLES</span><span id="particle-count">0</span></div>
-      </div>
-      <div id="hud-bottom">PRESS <kbd>Q</kbd> TO QUIT &bull; <kbd>C</kbd> CYCLE COLOR &bull; <kbd>S</kbd> SCANLINE</div>
+    <!-- HUD top-left -->
+    <div id="hud-top-left">
+      <div class="hud-row"><span class="hud-label">FPS</span><span id="fps">0</span></div>
+      <div class="hud-row"><span class="hud-label">HANDS</span><span id="hand-count">0</span></div>
+      <div class="hud-row"><span class="hud-label">GESTURE</span><span id="gesture-name">NONE</span></div>
+      <div class="hud-row"><span class="hud-label">PARTICLES</span><span id="particle-count">0</span></div>
     </div>
 
-    <footer>
-      <span>Built with MediaPipe + Canvas</span>
-      <a href="https://github.com/KING-SS-OFFICIAL/hand-tracking-ar" target="_blank">GitHub</a>
-    </footer>
+    <!-- Title bar -->
+    <div id="title-bar">
+      <span class="title-text">HAND-TRACKING <span class="accent">AR</span></span>
+      <span id="status">INITIALIZING</span>
+    </div>
+
+    <!-- Controls bottom-center -->
+    <div id="controls">
+      <button id="btn-camera" class="ctrl-btn" title="Switch Camera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16V7a2 2 0 0 0-2-2h-3l-2-2H9L7 5H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><circle cx="12" cy="11" r="3"/></svg>
+      </button>
+      <button id="btn-record" class="ctrl-btn record-btn" title="Record">
+        <span class="rec-dot"></span>
+      </button>
+      <button id="btn-fullscreen" class="ctrl-btn" title="Fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/></svg>
+      </button>
+    </div>
+
+    <!-- Record indicator -->
+    <div id="rec-indicator" class="hidden">
+      <span class="rec-blink"></span> REC <span id="rec-time">00:00</span>
+    </div>
   </div>
 
+  <!-- Start screen -->
   <div id="start-overlay">
     <div id="start-box">
       <div class="pulse-ring"></div>
+      <h1>HAND-TRACKING <span class="accent">AR</span></h1>
       <button id="start-btn">START CAMERA</button>
       <p>Allow webcam access to begin hand tracking</p>
     </div>

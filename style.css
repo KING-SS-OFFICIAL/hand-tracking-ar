@@ -1,76 +1,28 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
   --cyan: #00ffff;
   --cyan-dim: #00b4b4;
-  --cyan-glow: #00ffff80;
+  --cyan-glow: rgba(0,255,255,0.35);
   --bg: #0a0a0f;
-  --surface: #12121a;
   --text: #c8c8d0;
 }
 
-body {
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
   background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  overflow-x: hidden;
-}
-
-#app {
-  width: 100%;
-  max-width: 960px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px;
-}
-
-header {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 0 16px;
-}
-
-header h1 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: 3px;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   color: var(--text);
 }
 
-header h1 .accent {
-  color: var(--cyan);
-  text-shadow: 0 0 12px var(--cyan-glow);
-}
-
-#status {
-  font-size: 0.7rem;
-  letter-spacing: 2px;
-  color: var(--cyan-dim);
-  padding: 4px 12px;
-  border: 1px solid var(--cyan-dim);
-  border-radius: 3px;
-}
+/* ─── Viewport (fills entire screen) ──────────────────────────── */
 
 #viewport {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: var(--surface);
-  border: 1px solid #1e1e2a;
-  border-radius: 8px;
+  position: fixed;
+  inset: 0;
+  background: #000;
   overflow: hidden;
-  box-shadow: 0 0 40px rgba(0, 255, 255, 0.05);
 }
 
 #webcam {
@@ -90,18 +42,28 @@ header h1 .accent {
   transform: scaleX(-1);
 }
 
+#text-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ─── HUD top-left ────────────────────────────────────────────── */
+
 #hud-top-left {
   position: absolute;
-  top: 12px;
+  top: 16px;
   left: 16px;
   z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 3px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0,0,0,0.55);
   padding: 10px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(0, 255, 255, 0.15);
+  border: 1px solid rgba(0,255,255,0.15);
   backdrop-filter: blur(6px);
 }
 
@@ -109,7 +71,6 @@ header h1 .accent {
   display: flex;
   gap: 12px;
   align-items: baseline;
-  font-size: 0.85rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -127,58 +88,165 @@ header h1 .accent {
   font-size: 0.8rem;
 }
 
-#hud-bottom {
+/* ─── Title bar ───────────────────────────────────────────────── */
+
+#title-bar {
   position: absolute;
-  bottom: 10px;
+  top: 16px;
   right: 16px;
   z-index: 10;
-  font-size: 0.6rem;
-  letter-spacing: 1.5px;
-  color: #555;
-}
-
-#hud-bottom kbd {
-  background: rgba(0,255,255,0.1);
-  border: 1px solid rgba(0,255,255,0.2);
-  border-radius: 3px;
-  padding: 1px 5px;
-  font-size: 0.55rem;
-  color: var(--cyan-dim);
-  font-family: inherit;
-}
-
-footer {
-  width: 100%;
   display: flex;
-  justify-content: space-between;
-  padding: 14px 0;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0,0,0,0.55);
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,255,255,0.15);
+  backdrop-filter: blur(6px);
+}
+
+.title-text {
   font-size: 0.7rem;
-  color: #444;
+  font-weight: 600;
+  letter-spacing: 2px;
 }
 
-footer a {
-  color: var(--cyan-dim);
-  text-decoration: none;
-}
-footer a:hover {
+.accent {
   color: var(--cyan);
+  text-shadow: 0 0 10px var(--cyan-glow);
 }
 
-/* Start overlay */
+#status {
+  font-size: 0.6rem;
+  letter-spacing: 2px;
+  color: var(--cyan-dim);
+  padding: 3px 10px;
+  border: 1px solid var(--cyan-dim);
+  border-radius: 3px;
+}
+
+/* ─── Controls (bottom-center) ────────────────────────────────── */
+
+#controls {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 16px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px 20px;
+  border-radius: 40px;
+  border: 1px solid rgba(0,255,255,0.15);
+  backdrop-filter: blur(8px);
+}
+
+.ctrl-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--cyan-dim);
+  background: rgba(0,255,255,0.06);
+  color: var(--cyan);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.ctrl-btn:hover {
+  background: rgba(0,255,255,0.15);
+  border-color: var(--cyan);
+  box-shadow: 0 0 16px var(--cyan-glow);
+}
+
+.ctrl-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Record button */
+.record-btn {
+  width: 52px;
+  height: 52px;
+  border-color: #ff4444;
+  position: relative;
+}
+
+.record-btn:hover {
+  border-color: #ff6666;
+  box-shadow: 0 0 16px rgba(255,68,68,0.4);
+}
+
+.rec-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ff4444;
+  display: block;
+  transition: all 0.2s;
+}
+
+.record-btn.recording .rec-dot {
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  background: #ff4444;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* REC indicator */
+#rec-indicator {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: rgba(255,0,0,0.15);
+  border: 1px solid rgba(255,68,68,0.5);
+  padding: 6px 18px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: #ff4444;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(6px);
+}
+
+#rec-indicator.hidden { display: none; }
+
+.rec-blink {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+/* ─── Start overlay ───────────────────────────────────────────── */
+
 #start-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0,0,0,0.88);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
 }
 
-#start-overlay.hidden {
-  display: none;
-}
+#start-overlay.hidden { display: none; }
 
 #start-box {
   position: relative;
@@ -186,12 +254,19 @@ footer a:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
+}
+
+#start-box h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: var(--text);
 }
 
 #start-box p {
-  font-size: 0.75rem;
-  color: #666;
+  font-size: 0.8rem;
+  color: #555;
   letter-spacing: 1px;
 }
 
@@ -201,8 +276,8 @@ footer a:hover {
   background: transparent;
   color: var(--cyan);
   border: 2px solid var(--cyan);
-  padding: 16px 48px;
-  font-size: 0.9rem;
+  padding: 18px 56px;
+  font-size: 1rem;
   letter-spacing: 4px;
   font-weight: 600;
   cursor: pointer;
@@ -214,13 +289,13 @@ footer a:hover {
 #start-btn:hover {
   background: var(--cyan);
   color: var(--bg);
-  box-shadow: 0 0 30px var(--cyan-glow);
+  box-shadow: 0 0 40px var(--cyan-glow);
 }
 
 .pulse-ring {
   position: absolute;
-  width: 200px;
-  height: 200px;
+  width: 240px;
+  height: 240px;
   border: 2px solid var(--cyan-dim);
   border-radius: 50%;
   animation: pulse 2s ease-out infinite;
@@ -232,30 +307,18 @@ footer a:hover {
 }
 
 @keyframes pulse {
-  0% {
-    transform: translate(-50%, -50%) scale(0.6);
-    opacity: 0.6;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1.8);
-    opacity: 0;
-  }
+  0%   { transform: translate(-50%,-50%) scale(0.6); opacity: 0.6; }
+  100% { transform: translate(-50%,-50%) scale(2.0); opacity: 0; }
 }
 
-/* Responsive */
+/* ─── Responsive ──────────────────────────────────────────────── */
+
 @media (max-width: 640px) {
-  header h1 {
-    font-size: 0.85rem;
-  }
-  #start-btn {
-    padding: 12px 32px;
-    font-size: 0.75rem;
-  }
-  .hud-label {
-    min-width: 52px;
-    font-size: 0.55rem;
-  }
-  .hud-row span:last-child {
-    font-size: 0.7rem;
-  }
+  #start-box h1 { font-size: 1.2rem; }
+  #start-btn { padding: 14px 36px; font-size: 0.8rem; }
+  .hud-label { min-width: 52px; font-size: 0.55rem; }
+  .hud-row span:last-child { font-size: 0.7rem; }
+  #controls { gap: 10px; padding: 8px 14px; }
+  .ctrl-btn { width: 38px; height: 38px; }
+  .record-btn { width: 44px; height: 44px; }
 }
