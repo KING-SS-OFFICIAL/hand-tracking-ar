@@ -9,13 +9,39 @@ Real-time hand tracking with a futuristic AR HUD overlay — runs entirely in th
 
 ## Features
 
+### Core
 - **21-point hand landmark tracking** at 0.7 confidence threshold
-- **Futuristic AR HUD** — concentric rotating arcs, glowing skeleton, orbiting markers
-- **Dynamic tracking score** that follows your palm in real-time
 - **Mirrored webcam feed** for a natural user experience
-- **Zero server dependency** — all processing happens client-side via MediaPipe WASM
 - **Multi-hand support** — tracks up to 2 hands simultaneously
-- **Smoothed FPS counter** for performance monitoring
+- **Zero server dependency** — all processing happens client-side via MediaPipe WASM
+
+### Unique AR Effects
+- **Gesture Detection** — recognizes Open Palm, Fist, Peace, Thumbs Up, Pinch, Pointing, Rock, Three, Four
+- **Particle Trail System** — neon particles emit from each fingertip with gravity + fade
+- **Pinch Ripple Effect** — expanding shockwave rings when thumb and index finger touch
+- **Holographic Scan Line** — sweeping beam across the viewport
+- **Per-Finger Colors** — each finger gets its own hue in the skeleton
+- **Sci-Fi Data Panel** — floating readout showing finger states (EXT/FLD), hand span, gesture name
+- **Gesture Badge** — large centered notification flashes on gesture change
+- **5 Color Palettes** — cycle through Cyber Cyan, Neon Magenta, Toxic Green, Solar Gold, Ice Blue
+
+### AR HUD Elements
+| Element | Description |
+|---------|-------------|
+| Skeleton | Glowing lines + dots across all 21 landmarks, colored per finger |
+| Concentric arcs | 3 rotating rings at radii 55/85/120px with 3 orbiting dots each |
+| Tracking score | Confidence % at palm center with gesture + handedness subtitle |
+| Data panel | Floating readout with finger states, hand span, current gesture |
+| Scan line | Horizontal holographic sweep beam |
+| Viewport glow | Subtle edge gradient matching current palette |
+
+## Keyboard Controls
+
+| Key | Action |
+|-----|--------|
+| `Q` | Stop camera and tracking |
+| `C` | Cycle through 5 color palettes |
+| `S` | Toggle holographic scan line |
 
 ## Quick Start
 
@@ -41,9 +67,9 @@ Open `http://localhost:8080` in your browser. Click **START CAMERA** and allow w
 
 ```
 hand-tracking-ar/
-├── index.html    # Entry point — video + canvas layout
+├── index.html    # Entry point — video + canvas layout, HUD stats
 ├── style.css     # Futuristic dark theme, responsive
-├── app.js        # MediaPipe Hands init, AR rendering, FPS
+├── app.js        # All logic: MediaPipe, gestures, particles, ripples, rendering
 └── README.md
 ```
 
@@ -55,21 +81,15 @@ hand-tracking-ar/
 | Rendering | HTML5 Canvas 2D |
 | Camera | @mediapipe/camera_utils |
 
-## AR Elements
+## Color Palettes
 
-| Element | Description |
-|---------|-------------|
-| Skeleton | Glowing cyan lines + dots across all 21 landmarks |
-| Concentric arcs | 3 rotating rings at radii 55/85/115px around the palm |
-| Orbiting markers | Bright dots riding each arc ring |
-| Tracking score | Confidence % rendered at palm center with backdrop |
-| HUD | FPS counter + hand count in top-left overlay |
-
-## Keyboard
-
-| Key | Action |
-|-----|--------|
-| `Q` | Stop camera and tracking |
+| Palette | Primary | Vibe |
+|---------|---------|------|
+| Cyber Cyan | `#00ffff` | Default sci-fi look |
+| Neon Magenta | `#ff00ff` | Synthwave / vaporwave |
+| Toxic Green | `#39ff14` | Matrix / hacker |
+| Solar Gold | `#ffd700` | Warm / premium |
+| Ice Blue | `#80e0ff` | Cool / minimal |
 
 ## License
 
