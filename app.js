@@ -1,10 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
-//  HAND-TRACKING AR — Feature-Rich Web Application
-//  Gesture detection, particle trails, pinch ripples, scan lines,
-//  color cycling, per-finger colors, sci-fi data panel
+//  HAND-TRACKING AR
 // ═══════════════════════════════════════════════════════════════════
 
-// ─── Palette presets ─────────────────────────────────────────────
 const PALETTES = [
   { name: "CYBER CYAN",   primary: "#00ffff", dim: "#00b4b4", bright: "#66ffff", glow: "rgba(0,255,255,0.35)",    fingers: ["#00ffff","#00e5ff","#00d4ff","#00c3ff","#00b2ff"] },
   { name: "NEON MAGENTA", primary: "#ff00ff", dim: "#b400b4", bright: "#ff66ff", glow: "rgba(255,0,255,0.35)",    fingers: ["#ff00ff","#ff00e5","#ff00cc","#ff00b2","#ff0099"] },
@@ -15,8 +12,6 @@ const PALETTES = [
 
 let paletteIdx = 0;
 let P = PALETTES[0];
-
-// ─── Constants ───────────────────────────────────────────────────
 const DARK_BG = "rgba(10,10,15,0.6)";
 
 const FINGER_CONNECTIONS = [
@@ -27,16 +22,13 @@ const FINGER_CONNECTIONS = [
   [0, 17], [17, 18], [18, 19], [19, 20],
   [5, 9], [9, 13], [13, 17],
 ];
-
 const CONNECTION_FINGER = [
   0,0,0,0,  1,1,1,1,  2,2,2,2,  3,3,3,3,  4,4,4,4,  -1,-1,-1,
 ];
-
 const FINGER_TIPS = [4, 8, 12, 16, 20];
 const PALM_LANDMARKS = [0, 1, 5, 9, 13, 17];
 const FINGER_NAMES = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
 
-// ─── State ───────────────────────────────────────────────────────
 let rotationAngle = 0;
 let lastFrameTime = performance.now();
 let smoothedFps = 0;
@@ -47,12 +39,9 @@ let ripples = [];
 let prevGesture = "NONE";
 let gestureStableFrames = 0;
 
-// ─── DOM ─────────────────────────────────────────────────────────
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
-const textCanvas = document.getElementById("text-layer");
-const textCtx = textCanvas.getContext("2d");
 const fpsEl = document.getElementById("fps");
 const handCountEl = document.getElementById("hand-count");
 const gestureEl = document.getElementById("gesture-name");
@@ -61,9 +50,15 @@ const statusEl = document.getElementById("status");
 const startOverlay = document.getElementById("start-overlay");
 const startBtn = document.getElementById("start-btn");
 
-// ═══════════════════════════════════════════════════════════════════
-//  DRAWING HELPERS — visuals (on mirrored overlay canvas)
-// ═══════════════════════════════════════════════════════════════════
+// ─── Landmark → screen (mirrored) ────────────────────────────────
+// CSS scaleX(-1) mirrors the canvas.  A landmark at normalised x
+// appears on screen at (1-x).  We pre-mirror coordinates so text
+// drawn at the "wrong" canvas position shows up correctly on screen.
+
+function sx(lmX, w) { return (1 - lmX) * w; }
+function sy(lmY, h) { return lmY * h; }
+
+// ─── Drawing helpers (on ctx, which is CSS-mirrored) ──────────────
 
 function roundRect(c, x, y, w, h, r) {
   c.moveTo(x + r, y);
@@ -134,81 +129,60 @@ function glowArc(cx, cy, radius, startAngle, sweep, color, width = 1.5) {
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  GESTURE DETECTION
-// ═══════════════════════════════════════════════════════════════════
+// ─── Gesture detection ───────────────────────────────────────────
 
 function dist2D(a, b) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
-
-function isFingerExtended(lm, tipIdx, pipIdx) {
-  const wrist = lm[0];
-  return dist2D(lm[tipIdx], wrist) > dist2D(lm[pipIdx], wrist) * 1.05;
+function isFingerExtended(lm, tip, pip) {
+  return dist2D(lm[tip], lm[0]) > dist2D(lm[pip], lm[0]) * 1.05;
 }
-
 function isThumbExtended(lm) {
-  const ref = lm[5];
-  return dist2D(lm[4], ref) > dist2D(lm[3], ref) * 1.15;
+  return dist2D(lm[4], lm[5]) > dist2D(lm[3], lm[5]) * 1.15;
 }
 
 function detectGesture(lm) {
-  const thumbUp = isThumbExtended(lm);
-  const indexUp = isFingerExtended(lm, 8, 6);
-  const middleUp = isFingerExtended(lm, 12, 10);
-  const ringUp = isFingerExtended(lm, 16, 14);
-  const pinkyUp = isFingerExtended(lm, 20, 18);
-  const fingers = [thumbUp, indexUp, middleUp, ringUp, pinkyUp];
-  const upCount = fingers.filter(Boolean).length;
-  const pinchDist = dist2D(lm[4], lm[8]);
-  if (pinchDist < 0.06) return { name: "PINCH", fingers };
-  if (upCount === 0) return { name: "FIST", fingers };
-  if (upCount === 5) return { name: "OPEN PALM", fingers };
-  if (indexUp && middleUp && !ringUp && !pinkyUp) return { name: "PEACE", fingers };
-  if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) return { name: "THUMBS UP", fingers };
-  if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) return { name: "POINTING", fingers };
-  if (indexUp && pinkyUp && !middleUp && !ringUp) return { name: "ROCK", fingers };
-  if (indexUp && middleUp && ringUp && !pinkyUp) return { name: "THREE", fingers };
-  if (!thumbUp && indexUp && middleUp && ringUp && pinkyUp) return { name: "FOUR", fingers };
-  return { name: `${upCount} UP`, fingers };
+  const t = isThumbExtended(lm), i = isFingerExtended(lm, 8, 6);
+  const m = isFingerExtended(lm, 12, 10), r = isFingerExtended(lm, 16, 14);
+  const p = isFingerExtended(lm, 20, 18);
+  const fingers = [t, i, m, r, p];
+  const up = fingers.filter(Boolean).length;
+  if (dist2D(lm[4], lm[8]) < 0.06) return { name: "PINCH", fingers };
+  if (up === 0) return { name: "FIST", fingers };
+  if (up === 5) return { name: "OPEN PALM", fingers };
+  if (i && m && !r && !p) return { name: "PEACE", fingers };
+  if (t && !i && !m && !r && !p) return { name: "THUMBS UP", fingers };
+  if (!t && i && !m && !r && !p) return { name: "POINTING", fingers };
+  if (i && p && !m && !r) return { name: "ROCK", fingers };
+  if (i && m && r && !p) return { name: "THREE", fingers };
+  if (!t && i && m && r && p) return { name: "FOUR", fingers };
+  return { name: `${up} UP`, fingers };
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  PARTICLE SYSTEM
-// ═══════════════════════════════════════════════════════════════════
+// ─── Particles ───────────────────────────────────────────────────
 
 function spawnParticle(x, y, color) {
   if (particles.length > 600) return;
-  const angle = Math.random() * Math.PI * 2;
-  const speed = 0.3 + Math.random() * 1.2;
+  const a = Math.random() * Math.PI * 2;
+  const s = 0.3 + Math.random() * 1.2;
   particles.push({
-    x, y,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed,
-    life: 1.0,
-    decay: 0.012 + Math.random() * 0.015,
-    r: 1 + Math.random() * 2.5,
-    color,
+    x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+    life: 1, decay: 0.012 + Math.random() * 0.015,
+    r: 1 + Math.random() * 2.5, color,
   });
 }
-
 function updateParticles() {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.vy += 0.02;
-    p.life -= p.decay;
+    p.x += p.vx; p.y += p.vy; p.vy += 0.02; p.life -= p.decay;
     if (p.life <= 0) particles.splice(i, 1);
   }
 }
-
 function drawParticles() {
   for (const p of particles) {
     ctx.save();
     ctx.globalAlpha = p.life * 0.8;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 8;
+    ctx.shadowColor = p.color; ctx.shadowBlur = 8;
     ctx.fillStyle = p.color;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
@@ -218,94 +192,70 @@ function drawParticles() {
   particleCountEl.textContent = particles.length;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  RIPPLE SYSTEM
-// ═══════════════════════════════════════════════════════════════════
+// ─── Ripples ─────────────────────────────────────────────────────
 
 function spawnRipple(x, y) {
-  ripples.push({ x, y, radius: 5, maxRadius: 90, life: 1.0 });
+  ripples.push({ x, y, radius: 5, maxRadius: 90, life: 1 });
 }
-
 function updateRipples() {
   for (let i = ripples.length - 1; i >= 0; i--) {
     const r = ripples[i];
-    r.radius += 2.5;
-    r.life -= 0.025;
+    r.radius += 2.5; r.life -= 0.025;
     if (r.life <= 0 || r.radius > r.maxRadius) ripples.splice(i, 1);
   }
 }
-
 function drawRipples() {
   for (const r of ripples) {
     ctx.save();
     ctx.globalAlpha = r.life * 0.6;
     ctx.strokeStyle = P.bright;
-    ctx.shadowColor = P.glow;
-    ctx.shadowBlur = 16;
+    ctx.shadowColor = P.glow; ctx.shadowBlur = 16;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2); ctx.stroke();
     ctx.globalAlpha = r.life * 0.3;
     ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(r.x, r.y, r.radius * 0.6, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius * 0.6, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  SCAN LINE
-// ═══════════════════════════════════════════════════════════════════
+// ─── Scan line ───────────────────────────────────────────────────
 
 function drawScanLine(w, h) {
   if (!scanLineEnabled) return;
   scanLineY += 1.5;
   if (scanLineY > h + 20) scanLineY = -20;
   const grad = ctx.createLinearGradient(0, scanLineY - 10, 0, scanLineY + 10);
+  const rgb = hexToRgb(P.primary);
   grad.addColorStop(0, "rgba(0,0,0,0)");
-  grad.addColorStop(0.4, `rgba(${hexToRgb(P.primary)},0.08)`);
-  grad.addColorStop(0.5, `rgba(${hexToRgb(P.primary)},0.18)`);
-  grad.addColorStop(0.6, `rgba(${hexToRgb(P.primary)},0.08)`);
+  grad.addColorStop(0.4, `rgba(${rgb},0.08)`);
+  grad.addColorStop(0.5, `rgba(${rgb},0.18)`);
+  grad.addColorStop(0.6, `rgba(${rgb},0.08)`);
   grad.addColorStop(1, "rgba(0,0,0,0)");
   ctx.save();
   ctx.fillStyle = grad;
   ctx.fillRect(0, scanLineY - 10, w, 20);
   ctx.globalAlpha = 0.4;
   ctx.strokeStyle = P.primary;
-  ctx.shadowColor = P.primary;
-  ctx.shadowBlur = 6;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, scanLineY);
-  ctx.lineTo(w, scanLineY);
-  ctx.stroke();
+  ctx.shadowColor = P.primary; ctx.shadowBlur = 6; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, scanLineY); ctx.lineTo(w, scanLineY); ctx.stroke();
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  SKELETON
-// ═══════════════════════════════════════════════════════════════════
+// ─── Skeleton ────────────────────────────────────────────────────
 
-function drawSkeleton(landmarks, w, h, fingerStates) {
+function drawSkeleton(lm, w, h, fingers) {
   for (let ci = 0; ci < FINGER_CONNECTIONS.length; ci++) {
     const [i, j] = FINGER_CONNECTIONS[ci];
     const fi = CONNECTION_FINGER[ci];
-    const color = fi >= 0 ? P.fingers[fi] : P.primary;
-    glowLine(
-      landmarks[i].x * w, landmarks[i].y * h,
-      landmarks[j].x * w, landmarks[j].y * h,
-      color, 1.2
-    );
+    glowLine(lm[i].x * w, lm[i].y * h, lm[j].x * w, lm[j].y * h,
+             fi >= 0 ? P.fingers[fi] : P.primary, 1.2);
   }
-  for (let i = 0; i < landmarks.length; i++) {
-    const x = landmarks[i].x * w;
-    const y = landmarks[i].y * h;
+  for (let i = 0; i < lm.length; i++) {
+    const x = lm[i].x * w, y = lm[i].y * h;
     if (FINGER_TIPS.includes(i)) {
       const fi = FINGER_TIPS.indexOf(i);
-      const active = fingerStates[fi];
-      glowDot(x, y, active ? 7 : 5, active ? P.bright : P.dim);
+      glowDot(x, y, fingers[fi] ? 7 : 5, fingers[fi] ? P.bright : P.dim);
     } else if (i === 0) {
       glowDot(x, y, 7, P.bright);
     } else {
@@ -314,22 +264,19 @@ function drawSkeleton(landmarks, w, h, fingerStates) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  CONCENTRIC ARCS
-// ═══════════════════════════════════════════════════════════════════
+// ─── Concentric arcs ─────────────────────────────────────────────
 
 function drawConcentricCircles(cx, cy, gestureName) {
-  const speedMult = gestureName === "OPEN PALM" ? 1.5 : gestureName === "FIST" ? 0.4 : 1;
-  rotationAngle += 0.025 * speedMult;
+  const sm = gestureName === "OPEN PALM" ? 1.5 : gestureName === "FIST" ? 0.4 : 1;
+  rotationAngle += 0.025 * sm;
   const radii = [55, 85, 120];
   for (let idx = 0; idx < radii.length; idx++) {
     const r = radii[idx];
     const dir = idx % 2 === 0 ? 1 : -1;
     const angle = rotationAngle * dir * (1 + idx * 0.3);
     const sweep = 2.1 - idx * 0.35;
-    const color = P.fingers[idx % 5];
-    glowArc(cx, cy, r, angle, sweep, color, 1);
-    glowArc(cx, cy, r, angle + Math.PI, sweep, color, 1);
+    glowArc(cx, cy, r, angle, sweep, P.fingers[idx % 5], 1);
+    glowArc(cx, cy, r, angle + Math.PI, sweep, P.fingers[idx % 5], 1);
     for (let d = 0; d < 3; d++) {
       const da = angle + (d * Math.PI * 2) / 3;
       glowDot(cx + r * Math.cos(da), cy + r * Math.sin(da), 2.5, P.bright);
@@ -337,180 +284,182 @@ function drawConcentricCircles(cx, cy, gestureName) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  TEXT RENDERING — on non-mirrored text canvas
-// ═══════════════════════════════════════════════════════════════════
+// ─── TEXT: draw with identity transform (no CSS mirror) ──────────
+// We save the context, reset the canvas transform to undo any
+// internal transforms, draw text at pre-mirrored X, then restore.
+// CSS scaleX(-1) still mirrors the canvas visually, but since we
+// already drew at (w - x), the double-mirror produces readable text.
+
+function drawTextAt(text, lmX, lmY, font, color, align = "center", baseline = "middle") {
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);   // identity — undo any context mirror
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.textBaseline = baseline;
+  // pre-mirror X so CSS scaleX(-1) puts it on the correct side
+  ctx.fillText(text, sx(lmX, w), sy(lmY, h));
+  ctx.restore();
+}
+
+function fillRectAt(lmX, lmY, rw, rh, color, alpha = 1) {
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fillRect(sx(lmX, w) - rw / 2, sy(lmY, h), rw, rh);
+  ctx.restore();
+}
+
+// ─── Tracking score (on palm, readable) ──────────────────────────
 
 function drawTrackingScore(lm, w, h, handedness, confidence, gestureName) {
   let px = 0, py = 0;
-  for (const i of PALM_LANDMARKS) {
-    px += lm[i].x;
-    py += lm[i].y;
-  }
-  // mirror X for text canvas (overlay is CSS-mirrored, text-layer is not)
-  px = (1 - px / PALM_LANDMARKS.length) * w;
-  py = (py / PALM_LANDMARKS.length) * h;
+  for (const i of PALM_LANDMARKS) { px += lm[i].x; py += lm[i].y; }
+  px /= PALM_LANDMARKS.length;
+  py /= PALM_LANDMARKS.length;
 
   const score = Math.round(confidence * 100);
   const label = `${score}%`;
-  textCtx.save();
-  textCtx.font = "bold 30px 'Segoe UI', system-ui, sans-serif";
-  const tw = textCtx.measureText(label).width;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);    // identity transform
+
+  const screenX = sx(px, w);
+  const screenY = sy(py, h);
+
+  ctx.font = "bold 30px 'Segoe UI', system-ui, sans-serif";
+  const tw = ctx.measureText(label).width;
   const boxH = 62;
-  textCtx.fillStyle = DARK_BG;
-  textCtx.beginPath();
-  roundRect(textCtx, px - tw / 2 - 14, py - 26, tw + 28, boxH, 6);
-  textCtx.fill();
-  textCtx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.25)`;
-  textCtx.lineWidth = 1;
-  textCtx.beginPath();
-  roundRect(textCtx, px - tw / 2 - 14, py - 26, tw + 28, boxH, 6);
-  textCtx.stroke();
-  textCtx.shadowColor = P.glow;
-  textCtx.shadowBlur = 10;
-  textCtx.fillStyle = P.primary;
-  textCtx.textAlign = "center";
-  textCtx.textBaseline = "middle";
-  textCtx.fillText(label, px, py - 4);
-  textCtx.font = "600 10px 'Segoe UI', system-ui, sans-serif";
-  textCtx.shadowBlur = 0;
-  textCtx.fillStyle = P.dim;
-  textCtx.fillText(`${gestureName}  |  ${handedness.toUpperCase()}`, px, py + 24);
-  textCtx.restore();
+
+  // backdrop
+  ctx.fillStyle = DARK_BG;
+  ctx.beginPath();
+  roundRect(ctx, screenX - tw / 2 - 14, screenY - 26, tw + 28, boxH, 6);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.25)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  roundRect(ctx, screenX - tw / 2 - 14, screenY - 26, tw + 28, boxH, 6);
+  ctx.stroke();
+
+  // percentage
+  ctx.shadowColor = P.glow;
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = P.primary;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, screenX, screenY - 4);
+
+  // subtitle
+  ctx.font = "600 10px 'Segoe UI', system-ui, sans-serif";
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = P.dim;
+  ctx.fillText(`${gestureName}  |  ${handedness.toUpperCase()}`, screenX, screenY + 24);
+
+  ctx.restore();
 }
 
+// ─── Data panel (readable sci-fi readout) ────────────────────────
+
 function drawDataPanel(lm, w, h, gesture, handedness, idx) {
-  const wx = (1 - lm[0].x) * w;
-  const wy = lm[0].y * h;
-  // panel goes to the left of the wrist (since we mirrored X)
-  const panelX = wx - 170;
-  const panelY = wy - 60;
-  const panelW = 155;
-  const panelH = 115;
+  const screenX = sx(lm[0].x, w);
+  const screenY = sy(lm[0].y, h);
+  const panelW = 155, panelH = 115;
+  // panel sits to the LEFT of wrist in screen space
+  const px = screenX - panelW - 15;
+  const py = screenY - 60;
 
-  const span = dist2D(lm[0], lm[12]);
-  const spanCm = (span * 30).toFixed(1);
+  const span = (dist2D(lm[0], lm[12]) * 30).toFixed(1);
 
-  textCtx.save();
-  textCtx.fillStyle = "rgba(5,5,10,0.7)";
-  textCtx.beginPath();
-  roundRect(textCtx, panelX, panelY, panelW, panelH, 5);
-  textCtx.fill();
-  textCtx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.2)`;
-  textCtx.lineWidth = 1;
-  textCtx.beginPath();
-  roundRect(textCtx, panelX, panelY, panelW, panelH, 5);
-  textCtx.stroke();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  textCtx.fillStyle = P.primary;
-  textCtx.globalAlpha = 0.6;
-  textCtx.fillRect(panelX + 8, panelY + 1, panelW - 16, 2);
+  // background
+  ctx.fillStyle = "rgba(5,5,10,0.7)";
+  ctx.beginPath(); roundRect(ctx, px, py, panelW, panelH, 5); ctx.fill();
+  ctx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.2)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); roundRect(ctx, px, py, panelW, panelH, 5); ctx.stroke();
 
-  textCtx.globalAlpha = 1;
-  textCtx.textAlign = "left";
-  textCtx.textBaseline = "top";
-  let ty = panelY + 10;
-  const lx = panelX + 10;
-  const vx = panelX + 80;
+  // accent bar
+  ctx.fillStyle = P.primary;
+  ctx.globalAlpha = 0.6;
+  ctx.fillRect(px + 8, py + 1, panelW - 16, 2);
+  ctx.globalAlpha = 1;
 
-  textCtx.font = "bold 9px 'Segoe UI', system-ui, sans-serif";
-  textCtx.fillStyle = P.primary;
-  textCtx.shadowColor = P.glow;
-  textCtx.shadowBlur = 4;
-  textCtx.fillText(`HAND ${idx}  ${handedness.toUpperCase()}`, lx, ty);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  let ty = py + 10;
+  const lx = px + 10, vx = px + 80;
+
+  // header
+  ctx.font = "bold 9px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillStyle = P.primary;
+  ctx.shadowColor = P.glow; ctx.shadowBlur = 4;
+  ctx.fillText(`HAND ${idx}  ${handedness.toUpperCase()}`, lx, ty);
   ty += 16;
 
-  textCtx.shadowBlur = 0;
-  textCtx.font = "9px 'Courier New', monospace";
+  // finger states
+  ctx.shadowBlur = 0;
+  ctx.font = "9px 'Courier New', monospace";
   for (let fi = 0; fi < 5; fi++) {
     const up = gesture.fingers[fi];
-    textCtx.fillStyle = P.dim;
-    textCtx.fillText(FINGER_NAMES[fi].padEnd(7), lx, ty);
-    textCtx.fillStyle = up ? P.bright : "#555";
-    textCtx.fillText(up ? "EXT" : "FLD", vx, ty);
+    ctx.fillStyle = P.dim;
+    ctx.fillText(FINGER_NAMES[fi].padEnd(7), lx, ty);
+    ctx.fillStyle = up ? P.bright : "#555";
+    ctx.fillText(up ? "EXT" : "FLD", vx, ty);
     ty += 13;
   }
 
-  textCtx.fillStyle = P.dim;
-  textCtx.fillText("SPAN", lx, ty);
-  textCtx.fillStyle = P.primary;
-  textCtx.fillText(`${spanCm}cm`, vx, ty);
+  ctx.fillStyle = P.dim; ctx.fillText("SPAN", lx, ty);
+  ctx.fillStyle = P.primary; ctx.fillText(`${span}cm`, vx, ty);
   ty += 13;
-
-  textCtx.fillStyle = P.dim;
-  textCtx.fillText("GEST", lx, ty);
-  textCtx.fillStyle = P.bright;
-  textCtx.fillText(gesture.name, vx, ty);
+  ctx.fillStyle = P.dim; ctx.fillText("GEST", lx, ty);
+  ctx.fillStyle = P.bright; ctx.fillText(gesture.name, vx, ty);
 
   // connector line
-  textCtx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.15)`;
-  textCtx.lineWidth = 1;
-  textCtx.setLineDash([3, 3]);
-  textCtx.beginPath();
-  textCtx.moveTo(wx - 10, wy);
-  textCtx.lineTo(panelX + panelW, panelY + panelH / 2);
-  textCtx.stroke();
-  textCtx.setLineDash([]);
+  ctx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.15)`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(screenX - 10, screenY);
+  ctx.lineTo(px + panelW, py + panelH / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
-  textCtx.restore();
+  ctx.restore();
 }
+
+// ─── Gesture badge (center, always readable) ─────────────────────
 
 function drawGestureBadge(w, h, gestureName) {
-  if (gestureName === prevGesture) {
-    gestureStableFrames++;
-  } else {
-    prevGesture = gestureName;
-    gestureStableFrames = 0;
-  }
+  if (gestureName === prevGesture) { gestureStableFrames++; }
+  else { prevGesture = gestureName; gestureStableFrames = 0; }
   gestureEl.textContent = gestureName;
+
   if (gestureStableFrames < 15 && gestureName !== "NONE") {
     const alpha = 1 - gestureStableFrames / 15;
-    textCtx.save();
-    textCtx.globalAlpha = alpha * 0.7;
-    textCtx.font = "bold 28px 'Segoe UI', system-ui, sans-serif";
-    textCtx.textAlign = "center";
-    textCtx.textBaseline = "middle";
-    textCtx.fillStyle = P.primary;
-    textCtx.shadowColor = P.glow;
-    textCtx.shadowBlur = 20;
-    textCtx.fillText(gestureName, w / 2, h / 2 - 80);
-    textCtx.restore();
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.font = "bold 28px 'Segoe UI', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = P.primary;
+    ctx.shadowColor = P.glow;
+    ctx.shadowBlur = 20;
+    ctx.fillText(gestureName, w / 2, h / 2 - 80);
+    ctx.restore();
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  FINGER PARTICLES + PINCH
-// ═══════════════════════════════════════════════════════════════════
-
-function emitFingerParticles(landmarks, w, h) {
-  for (let fi = 0; fi < FINGER_TIPS.length; fi++) {
-    const tip = landmarks[FINGER_TIPS[fi]];
-    const x = tip.x * w;
-    const y = tip.y * h;
-    spawnParticle(x, y, P.fingers[fi]);
-    if (Math.random() > 0.5) {
-      spawnParticle(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, P.fingers[fi]);
-    }
-  }
-}
-
-function handlePinch(landmarks, w, h, gestureName) {
-  if (gestureName === "PINCH") {
-    const tx = ((landmarks[4].x + landmarks[8].x) / 2) * w;
-    const ty = ((landmarks[4].y + landmarks[8].y) / 2) * h;
-    if (Math.random() > 0.6) spawnRipple(tx, ty);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  UTILS
-// ═══════════════════════════════════════════════════════════════════
+// ─── Helpers ─────────────────────────────────────────────────────
 
 function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `${r},${g},${b}`;
+  return `${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)}`;
 }
 
 function updateFps() {
@@ -521,8 +470,26 @@ function updateFps() {
   fpsEl.textContent = Math.round(smoothedFps);
 }
 
+function emitFingerParticles(lm, w, h) {
+  for (let fi = 0; fi < FINGER_TIPS.length; fi++) {
+    const x = lm[FINGER_TIPS[fi]].x * w;
+    const y = lm[FINGER_TIPS[fi]].y * h;
+    spawnParticle(x, y, P.fingers[fi]);
+    if (Math.random() > 0.5)
+      spawnParticle(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, P.fingers[fi]);
+  }
+}
+
+function handlePinch(lm, w, h, gestureName) {
+  if (gestureName === "PINCH") {
+    const tx = ((lm[4].x + lm[8].x) / 2) * w;
+    const ty = ((lm[4].y + lm[8].y) / 2) * h;
+    if (Math.random() > 0.6) spawnRipple(tx, ty);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
-//  MAIN RENDER LOOP
+//  MAIN RENDER
 // ═══════════════════════════════════════════════════════════════════
 
 function onResults(results) {
@@ -530,15 +497,11 @@ function onResults(results) {
   const h = canvas.clientHeight;
   canvas.width = w;
   canvas.height = h;
-  textCanvas.width = w;
-  textCanvas.height = h;
 
   ctx.clearRect(0, 0, w, h);
-  textCtx.clearRect(0, 0, w, h);
   updateFps();
   updateParticles();
   updateRipples();
-
   drawScanLine(w, h);
 
   if (results.multiHandLandmarks && results.multiHandedness) {
@@ -552,10 +515,7 @@ function onResults(results) {
       const gesture = detectGesture(lm);
 
       let cx = 0, cy = 0;
-      for (const pi of PALM_LANDMARKS) {
-        cx += lm[pi].x;
-        cy += lm[pi].y;
-      }
+      for (const pi of PALM_LANDMARKS) { cx += lm[pi].x; cy += lm[pi].y; }
       cx = (cx / PALM_LANDMARKS.length) * w;
       cy = (cy / PALM_LANDMARKS.length) * h;
 
@@ -564,7 +524,7 @@ function onResults(results) {
       handlePinch(lm, w, h, gesture.name);
       drawConcentricCircles(cx, cy, gesture.name);
 
-      // text on non-mirrored canvas
+      // Text drawn with identity transform + pre-mirrored X
       drawTrackingScore(lm, w, h, handedness, confidence, gesture.name);
       drawDataPanel(lm, w, h, gesture, handedness, i + 1);
       drawGestureBadge(w, h, gesture.name);
@@ -578,20 +538,18 @@ function onResults(results) {
   drawRipples();
   drawParticles();
 
-  // viewport edge glow
+  // edge glow
   ctx.save();
-  const edgeGrad = ctx.createLinearGradient(0, 0, w, 0);
-  edgeGrad.addColorStop(0, `rgba(${hexToRgb(P.primary)},0.06)`);
-  edgeGrad.addColorStop(0.5, "rgba(0,0,0,0)");
-  edgeGrad.addColorStop(1, `rgba(${hexToRgb(P.primary)},0.06)`);
-  ctx.fillStyle = edgeGrad;
+  const eg = ctx.createLinearGradient(0, 0, w, 0);
+  eg.addColorStop(0, `rgba(${hexToRgb(P.primary)},0.06)`);
+  eg.addColorStop(0.5, "rgba(0,0,0,0)");
+  eg.addColorStop(1, `rgba(${hexToRgb(P.primary)},0.06)`);
+  ctx.fillStyle = eg;
   ctx.fillRect(0, 0, w, h);
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  KEYBOARD
-// ═══════════════════════════════════════════════════════════════════
+// ─── Keyboard ────────────────────────────────────────────────────
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "q" || e.key === "Q") {
@@ -605,43 +563,29 @@ document.addEventListener("keydown", (e) => {
     statusEl.style.borderColor = P.primary;
     statusEl.style.color = P.primary;
   }
-  if (e.key === "s" || e.key === "S") {
-    scanLineEnabled = !scanLineEnabled;
-  }
+  if (e.key === "s" || e.key === "S") scanLineEnabled = !scanLineEnabled;
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════════════════════════════════
+// ─── Init ────────────────────────────────────────────────────────
 
 async function start() {
   startOverlay.classList.add("hidden");
   statusEl.textContent = "LOADING MODEL...";
 
   const hands = new Hands({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`,
+    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`,
   });
-
   hands.setOptions({
-    maxNumHands: 2,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.7,
+    maxNumHands: 2, modelComplexity: 1,
+    minDetectionConfidence: 0.7, minTrackingConfidence: 0.7,
   });
-
   hands.onResults(onResults);
 
   statusEl.textContent = "STARTING CAMERA...";
-
   const camera = new Camera(video, {
-    onFrame: async () => {
-      await hands.send({ image: video });
-    },
-    width: 1280,
-    height: 720,
+    onFrame: async () => await hands.send({ image: video }),
+    width: 1280, height: 720,
   });
-
   await camera.start();
   statusEl.textContent = P.name;
   statusEl.style.borderColor = P.primary;
