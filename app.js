@@ -28,14 +28,11 @@ const FINGER_CONNECTIONS = [
   [5, 9], [9, 13], [13, 17],
 ];
 
-// Map each connection to a finger index (0=thumb,1=index,2=middle,3=ring,4=pinky)
 const CONNECTION_FINGER = [
   0,0,0,0,  1,1,1,1,  2,2,2,2,  3,3,3,3,  4,4,4,4,  -1,-1,-1,
 ];
 
 const FINGER_TIPS = [4, 8, 12, 16, 20];
-const FINGER_PIPS = [3, 7, 11, 15, 19];
-const FINGER_MCPS = [2, 6, 10, 14, 18];  // thumb uses CMC(1) instead
 const PALM_LANDMARKS = [0, 1, 5, 9, 13, 17];
 const FINGER_NAMES = ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"];
 
@@ -54,6 +51,8 @@ let gestureStableFrames = 0;
 const video = document.getElementById("webcam");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
+const textCanvas = document.getElementById("text-layer");
+const textCtx = textCanvas.getContext("2d");
 const fpsEl = document.getElementById("fps");
 const handCountEl = document.getElementById("hand-count");
 const gestureEl = document.getElementById("gesture-name");
@@ -63,19 +62,19 @@ const startOverlay = document.getElementById("start-overlay");
 const startBtn = document.getElementById("start-btn");
 
 // ═══════════════════════════════════════════════════════════════════
-//  DRAWING HELPERS
+//  DRAWING HELPERS — visuals (on mirrored overlay canvas)
 // ═══════════════════════════════════════════════════════════════════
 
-function roundRect(x, y, w, h, r) {
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
+function roundRect(c, x, y, w, h, r) {
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
 }
 
 function glowLine(x1, y1, x2, y2, color, width = 1.5) {
@@ -144,13 +143,11 @@ function dist2D(a, b) {
 }
 
 function isFingerExtended(lm, tipIdx, pipIdx) {
-  // finger is "up" if tip is farther from wrist than the PIP joint
   const wrist = lm[0];
   return dist2D(lm[tipIdx], wrist) > dist2D(lm[pipIdx], wrist) * 1.05;
 }
 
 function isThumbExtended(lm) {
-  // thumb: compare tip(4) vs IP(3) distance from index MCP(5)
   const ref = lm[5];
   return dist2D(lm[4], ref) > dist2D(lm[3], ref) * 1.15;
 }
@@ -161,38 +158,18 @@ function detectGesture(lm) {
   const middleUp = isFingerExtended(lm, 12, 10);
   const ringUp = isFingerExtended(lm, 16, 14);
   const pinkyUp = isFingerExtended(lm, 20, 18);
-
   const fingers = [thumbUp, indexUp, middleUp, ringUp, pinkyUp];
   const upCount = fingers.filter(Boolean).length;
-
-  // Pinch: thumb tip very close to index tip
   const pinchDist = dist2D(lm[4], lm[8]);
   if (pinchDist < 0.06) return { name: "PINCH", fingers };
-
-  // Fist: all fingers down
   if (upCount === 0) return { name: "FIST", fingers };
-
-  // Open palm: all fingers up
   if (upCount === 5) return { name: "OPEN PALM", fingers };
-
-  // Peace: index + middle up, others down
   if (indexUp && middleUp && !ringUp && !pinkyUp) return { name: "PEACE", fingers };
-
-  // Thumbs up: only thumb up
   if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) return { name: "THUMBS UP", fingers };
-
-  // Pointing: only index up
   if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) return { name: "POINTING", fingers };
-
-  // Rock: index + pinky up
   if (indexUp && pinkyUp && !middleUp && !ringUp) return { name: "ROCK", fingers };
-
-  // Three: index + middle + ring
   if (indexUp && middleUp && ringUp && !pinkyUp) return { name: "THREE", fingers };
-
-  // Four: all except thumb
   if (!thumbUp && indexUp && middleUp && ringUp && pinkyUp) return { name: "FOUR", fingers };
-
   return { name: `${upCount} UP`, fingers };
 }
 
@@ -220,11 +197,9 @@ function updateParticles() {
     const p = particles[i];
     p.x += p.vx;
     p.y += p.vy;
-    p.vy += 0.02; // slight gravity
+    p.vy += 0.02;
     p.life -= p.decay;
-    if (p.life <= 0) {
-      particles.splice(i, 1);
-    }
+    if (p.life <= 0) particles.splice(i, 1);
   }
 }
 
@@ -244,7 +219,7 @@ function drawParticles() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  RIPPLE SYSTEM (pinch effect)
+//  RIPPLE SYSTEM
 // ═══════════════════════════════════════════════════════════════════
 
 function spawnRipple(x, y) {
@@ -256,9 +231,7 @@ function updateRipples() {
     const r = ripples[i];
     r.radius += 2.5;
     r.life -= 0.025;
-    if (r.life <= 0 || r.radius > r.maxRadius) {
-      ripples.splice(i, 1);
-    }
+    if (r.life <= 0 || r.radius > r.maxRadius) ripples.splice(i, 1);
   }
 }
 
@@ -273,7 +246,6 @@ function drawRipples() {
     ctx.beginPath();
     ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
     ctx.stroke();
-    // inner ring
     ctx.globalAlpha = r.life * 0.3;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -291,7 +263,6 @@ function drawScanLine(w, h) {
   if (!scanLineEnabled) return;
   scanLineY += 1.5;
   if (scanLineY > h + 20) scanLineY = -20;
-  // gradient beam
   const grad = ctx.createLinearGradient(0, scanLineY - 10, 0, scanLineY + 10);
   grad.addColorStop(0, "rgba(0,0,0,0)");
   grad.addColorStop(0.4, `rgba(${hexToRgb(P.primary)},0.08)`);
@@ -301,7 +272,6 @@ function drawScanLine(w, h) {
   ctx.save();
   ctx.fillStyle = grad;
   ctx.fillRect(0, scanLineY - 10, w, 20);
-  // bright center line
   ctx.globalAlpha = 0.4;
   ctx.strokeStyle = P.primary;
   ctx.shadowColor = P.primary;
@@ -315,11 +285,10 @@ function drawScanLine(w, h) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  SKELETON (per-finger colors)
+//  SKELETON
 // ═══════════════════════════════════════════════════════════════════
 
 function drawSkeleton(landmarks, w, h, fingerStates) {
-  // lines
   for (let ci = 0; ci < FINGER_CONNECTIONS.length; ci++) {
     const [i, j] = FINGER_CONNECTIONS[ci];
     const fi = CONNECTION_FINGER[ci];
@@ -330,15 +299,13 @@ function drawSkeleton(landmarks, w, h, fingerStates) {
       color, 1.2
     );
   }
-  // dots
   for (let i = 0; i < landmarks.length; i++) {
     const x = landmarks[i].x * w;
     const y = landmarks[i].y * h;
     if (FINGER_TIPS.includes(i)) {
       const fi = FINGER_TIPS.indexOf(i);
       const active = fingerStates[fi];
-      const color = active ? P.bright : P.dim;
-      glowDot(x, y, active ? 7 : 5, color);
+      glowDot(x, y, active ? 7 : 5, active ? P.bright : P.dim);
     } else if (i === 0) {
       glowDot(x, y, 7, P.bright);
     } else {
@@ -363,150 +330,156 @@ function drawConcentricCircles(cx, cy, gestureName) {
     const color = P.fingers[idx % 5];
     glowArc(cx, cy, r, angle, sweep, color, 1);
     glowArc(cx, cy, r, angle + Math.PI, sweep, color, 1);
-    // orbiting dots (3 per ring)
     for (let d = 0; d < 3; d++) {
       const da = angle + (d * Math.PI * 2) / 3;
-      const dx = cx + r * Math.cos(da);
-      const dy = cy + r * Math.sin(da);
-      glowDot(dx, dy, 2.5, P.bright);
+      glowDot(cx + r * Math.cos(da), cy + r * Math.sin(da), 2.5, P.bright);
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  TRACKING SCORE
+//  TEXT RENDERING — on non-mirrored text canvas
 // ═══════════════════════════════════════════════════════════════════
 
-function drawTrackingScore(landmarks, w, h, handedness, confidence, gestureName) {
+function drawTrackingScore(lm, w, h, handedness, confidence, gestureName) {
   let px = 0, py = 0;
   for (const i of PALM_LANDMARKS) {
-    px += landmarks[i].x;
-    py += landmarks[i].y;
+    px += lm[i].x;
+    py += lm[i].y;
   }
-  px = (px / PALM_LANDMARKS.length) * w;
+  // mirror X for text canvas (overlay is CSS-mirrored, text-layer is not)
+  px = (1 - px / PALM_LANDMARKS.length) * w;
   py = (py / PALM_LANDMARKS.length) * h;
 
   const score = Math.round(confidence * 100);
   const label = `${score}%`;
-  ctx.save();
-  ctx.font = "bold 30px 'Segoe UI', system-ui, sans-serif";
-  const tw = ctx.measureText(label).width;
+  textCtx.save();
+  textCtx.font = "bold 30px 'Segoe UI', system-ui, sans-serif";
+  const tw = textCtx.measureText(label).width;
   const boxH = 62;
-  // backdrop
-  ctx.fillStyle = DARK_BG;
-  ctx.beginPath();
-  roundRect(px - tw / 2 - 14, py - 26, tw + 28, boxH, 6);
-  ctx.fill();
-  ctx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.25)`;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  roundRect(px - tw / 2 - 14, py - 26, tw + 28, boxH, 6);
-  ctx.stroke();
-  // percentage
-  ctx.shadowColor = P.glow;
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = P.primary;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, px, py - 4);
-  // subtitle: gesture + handedness
-  ctx.font = "600 10px 'Segoe UI', system-ui, sans-serif";
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = P.dim;
-  ctx.fillText(`${gestureName}  |  ${handedness.toUpperCase()}`, px, py + 24);
-  ctx.restore();
+  textCtx.fillStyle = DARK_BG;
+  textCtx.beginPath();
+  roundRect(textCtx, px - tw / 2 - 14, py - 26, tw + 28, boxH, 6);
+  textCtx.fill();
+  textCtx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.25)`;
+  textCtx.lineWidth = 1;
+  textCtx.beginPath();
+  roundRect(textCtx, px - tw / 2 - 14, py - 26, tw + 28, boxH, 6);
+  textCtx.stroke();
+  textCtx.shadowColor = P.glow;
+  textCtx.shadowBlur = 10;
+  textCtx.fillStyle = P.primary;
+  textCtx.textAlign = "center";
+  textCtx.textBaseline = "middle";
+  textCtx.fillText(label, px, py - 4);
+  textCtx.font = "600 10px 'Segoe UI', system-ui, sans-serif";
+  textCtx.shadowBlur = 0;
+  textCtx.fillStyle = P.dim;
+  textCtx.fillText(`${gestureName}  |  ${handedness.toUpperCase()}`, px, py + 24);
+  textCtx.restore();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  DATA PANEL (sci-fi readout)
-// ═══════════════════════════════════════════════════════════════════
-
-function drawDataPanel(landmarks, w, h, gesture, handedness, idx) {
-  // position panel at wrist offset
-  const wx = landmarks[0].x * w;
-  const wy = landmarks[0].y * h;
-  const panelX = wx + 70;
+function drawDataPanel(lm, w, h, gesture, handedness, idx) {
+  const wx = (1 - lm[0].x) * w;
+  const wy = lm[0].y * h;
+  // panel goes to the left of the wrist (since we mirrored X)
+  const panelX = wx - 170;
   const panelY = wy - 60;
   const panelW = 155;
   const panelH = 115;
 
-  // hand span: wrist to middle finger tip
-  const span = dist2D(landmarks[0], landmarks[12]);
-  const spanCm = (span * 30).toFixed(1); // rough approximation
+  const span = dist2D(lm[0], lm[12]);
+  const spanCm = (span * 30).toFixed(1);
 
-  ctx.save();
-  // panel background
-  ctx.fillStyle = "rgba(5,5,10,0.7)";
-  ctx.beginPath();
-  roundRect(panelX, panelY, panelW, panelH, 5);
-  ctx.fill();
-  ctx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.2)`;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  roundRect(panelX, panelY, panelW, panelH, 5);
-  ctx.stroke();
+  textCtx.save();
+  textCtx.fillStyle = "rgba(5,5,10,0.7)";
+  textCtx.beginPath();
+  roundRect(textCtx, panelX, panelY, panelW, panelH, 5);
+  textCtx.fill();
+  textCtx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.2)`;
+  textCtx.lineWidth = 1;
+  textCtx.beginPath();
+  roundRect(textCtx, panelX, panelY, panelW, panelH, 5);
+  textCtx.stroke();
 
-  // top accent line
-  ctx.fillStyle = P.primary;
-  ctx.globalAlpha = 0.6;
-  ctx.fillRect(panelX + 8, panelY + 1, panelW - 16, 2);
+  textCtx.fillStyle = P.primary;
+  textCtx.globalAlpha = 0.6;
+  textCtx.fillRect(panelX + 8, panelY + 1, panelW - 16, 2);
 
-  ctx.globalAlpha = 1;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
+  textCtx.globalAlpha = 1;
+  textCtx.textAlign = "left";
+  textCtx.textBaseline = "top";
   let ty = panelY + 10;
   const lx = panelX + 10;
   const vx = panelX + 80;
 
-  // header
-  ctx.font = "bold 9px 'Segoe UI', system-ui, sans-serif";
-  ctx.fillStyle = P.primary;
-  ctx.shadowColor = P.glow;
-  ctx.shadowBlur = 4;
-  ctx.fillText(`HAND ${idx}  ${handedness.toUpperCase()}`, lx, ty);
+  textCtx.font = "bold 9px 'Segoe UI', system-ui, sans-serif";
+  textCtx.fillStyle = P.primary;
+  textCtx.shadowColor = P.glow;
+  textCtx.shadowBlur = 4;
+  textCtx.fillText(`HAND ${idx}  ${handedness.toUpperCase()}`, lx, ty);
   ty += 16;
 
-  // finger states
-  ctx.shadowBlur = 0;
-  ctx.font = "9px 'Courier New', monospace";
+  textCtx.shadowBlur = 0;
+  textCtx.font = "9px 'Courier New', monospace";
   for (let fi = 0; fi < 5; fi++) {
     const up = gesture.fingers[fi];
-    const stateLabel = up ? "EXT" : "FLD";
-    ctx.fillStyle = P.dim;
-    ctx.fillText(FINGER_NAMES[fi].padEnd(7), lx, ty);
-    ctx.fillStyle = up ? P.bright : "#555";
-    ctx.fillText(stateLabel, vx, ty);
+    textCtx.fillStyle = P.dim;
+    textCtx.fillText(FINGER_NAMES[fi].padEnd(7), lx, ty);
+    textCtx.fillStyle = up ? P.bright : "#555";
+    textCtx.fillText(up ? "EXT" : "FLD", vx, ty);
     ty += 13;
   }
 
-  // hand span
-  ctx.fillStyle = P.dim;
-  ctx.fillText("SPAN", lx, ty);
-  ctx.fillStyle = P.primary;
-  ctx.fillText(`${spanCm}cm`, vx, ty);
+  textCtx.fillStyle = P.dim;
+  textCtx.fillText("SPAN", lx, ty);
+  textCtx.fillStyle = P.primary;
+  textCtx.fillText(`${spanCm}cm`, vx, ty);
   ty += 13;
 
-  // gesture
-  ctx.fillStyle = P.dim;
-  ctx.fillText("GEST", lx, ty);
-  ctx.fillStyle = P.bright;
-  ctx.fillText(gesture.name, vx, ty);
+  textCtx.fillStyle = P.dim;
+  textCtx.fillText("GEST", lx, ty);
+  textCtx.fillStyle = P.bright;
+  textCtx.fillText(gesture.name, vx, ty);
 
-  // connector line from wrist to panel
-  ctx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.15)`;
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(wx + 10, wy);
-  ctx.lineTo(panelX, panelY + panelH / 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  // connector line
+  textCtx.strokeStyle = `rgba(${hexToRgb(P.primary)},0.15)`;
+  textCtx.lineWidth = 1;
+  textCtx.setLineDash([3, 3]);
+  textCtx.beginPath();
+  textCtx.moveTo(wx - 10, wy);
+  textCtx.lineTo(panelX + panelW, panelY + panelH / 2);
+  textCtx.stroke();
+  textCtx.setLineDash([]);
 
-  ctx.restore();
+  textCtx.restore();
+}
+
+function drawGestureBadge(w, h, gestureName) {
+  if (gestureName === prevGesture) {
+    gestureStableFrames++;
+  } else {
+    prevGesture = gestureName;
+    gestureStableFrames = 0;
+  }
+  gestureEl.textContent = gestureName;
+  if (gestureStableFrames < 15 && gestureName !== "NONE") {
+    const alpha = 1 - gestureStableFrames / 15;
+    textCtx.save();
+    textCtx.globalAlpha = alpha * 0.7;
+    textCtx.font = "bold 28px 'Segoe UI', system-ui, sans-serif";
+    textCtx.textAlign = "center";
+    textCtx.textBaseline = "middle";
+    textCtx.fillStyle = P.primary;
+    textCtx.shadowColor = P.glow;
+    textCtx.shadowBlur = 20;
+    textCtx.fillText(gestureName, w / 2, h / 2 - 80);
+    textCtx.restore();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  FINGER TRAIL PARTICLES
+//  FINGER PARTICLES + PINCH
 // ═══════════════════════════════════════════════════════════════════
 
 function emitFingerParticles(landmarks, w, h) {
@@ -514,17 +487,12 @@ function emitFingerParticles(landmarks, w, h) {
     const tip = landmarks[FINGER_TIPS[fi]];
     const x = tip.x * w;
     const y = tip.y * h;
-    // emit 1-2 particles per tip per frame
     spawnParticle(x, y, P.fingers[fi]);
     if (Math.random() > 0.5) {
       spawnParticle(x + (Math.random() - 0.5) * 6, y + (Math.random() - 0.5) * 6, P.fingers[fi]);
     }
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════
-//  PINCH RIPPLE TRIGGER
-// ═══════════════════════════════════════════════════════════════════
 
 function handlePinch(landmarks, w, h, gestureName) {
   if (gestureName === "PINCH") {
@@ -535,35 +503,7 @@ function handlePinch(landmarks, w, h, gestureName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  GESTURE BADGE (large centered notification on gesture change)
-// ═══════════════════════════════════════════════════════════════════
-
-function drawGestureBadge(w, h, gestureName) {
-  if (gestureName === prevGesture) {
-    gestureStableFrames++;
-  } else {
-    prevGesture = gestureName;
-    gestureStableFrames = 0;
-  }
-  gestureEl.textContent = gestureName;
-  // flash badge on gesture change (first ~15 frames)
-  if (gestureStableFrames < 15 && gestureName !== "NONE") {
-    const alpha = 1 - gestureStableFrames / 15;
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.7;
-    ctx.font = "bold 28px 'Segoe UI', system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = P.primary;
-    ctx.shadowColor = P.glow;
-    ctx.shadowBlur = 20;
-    ctx.fillText(gestureName, w / 2, h / 2 - 80);
-    ctx.restore();
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  HEX UTILS
+//  UTILS
 // ═══════════════════════════════════════════════════════════════════
 
 function hexToRgb(hex) {
@@ -573,36 +513,32 @@ function hexToRgb(hex) {
   return `${r},${g},${b}`;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  FPS
-// ═══════════════════════════════════════════════════════════════════
-
 function updateFps() {
   const now = performance.now();
   const dt = now - lastFrameTime;
   lastFrameTime = now;
-  if (dt > 0) {
-    smoothedFps = smoothedFps * 0.9 + (1000 / dt) * 0.1;
-  }
+  if (dt > 0) smoothedFps = smoothedFps * 0.9 + (1000 / dt) * 0.1;
   fpsEl.textContent = Math.round(smoothedFps);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  MAIN RENDER LOOP (MediaPipe callback)
+//  MAIN RENDER LOOP
 // ═══════════════════════════════════════════════════════════════════
 
 function onResults(results) {
-  canvas.width = canvas.clientWidth;
-  canvas.height = canvas.clientHeight;
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  canvas.width = w;
+  canvas.height = h;
+  textCanvas.width = w;
+  textCanvas.height = h;
 
   ctx.clearRect(0, 0, w, h);
+  textCtx.clearRect(0, 0, w, h);
   updateFps();
   updateParticles();
   updateRipples();
 
-  // always draw scan line
   drawScanLine(w, h);
 
   if (results.multiHandLandmarks && results.multiHandedness) {
@@ -615,7 +551,6 @@ function onResults(results) {
       const confidence = results.multiHandedness[i].score;
       const gesture = detectGesture(lm);
 
-      // palm center
       let cx = 0, cy = 0;
       for (const pi of PALM_LANDMARKS) {
         cx += lm[pi].x;
@@ -628,6 +563,8 @@ function onResults(results) {
       emitFingerParticles(lm, w, h);
       handlePinch(lm, w, h, gesture.name);
       drawConcentricCircles(cx, cy, gesture.name);
+
+      // text on non-mirrored canvas
       drawTrackingScore(lm, w, h, handedness, confidence, gesture.name);
       drawDataPanel(lm, w, h, gesture, handedness, i + 1);
       drawGestureBadge(w, h, gesture.name);
@@ -638,7 +575,6 @@ function onResults(results) {
     prevGesture = "NONE";
   }
 
-  // particles + ripples drawn on top
   drawRipples();
   drawParticles();
 
@@ -654,7 +590,7 @@ function onResults(results) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  KEYBOARD CONTROLS
+//  KEYBOARD
 // ═══════════════════════════════════════════════════════════════════
 
 document.addEventListener("keydown", (e) => {
