@@ -1,33 +1,41 @@
-# Hand-Tracking AR Interface
+# Full-Body AR Tracker
 
-Full-screen real-time hand tracking with a futuristic AR HUD overlay — runs entirely in the browser.
+Real-time full-body tracking with AR overlays — face mesh, iris, hand gestures, body pose — runs entirely in the browser.
 
 [![Live Demo](https://img.shields.io/badge/Live-Demo-00ffff?style=for-the-badge)](https://KING-SS-OFFICIAL.github.io/hand-tracking-ar)
 
+## Tracking Capabilities
+
+| Tracker | Landmarks | What it tracks |
+|---------|-----------|----------------|
+| **Body Pose** | 33 points | Full skeleton — shoulders, elbows, wrists, hips, knees, ankles, face outline |
+| **Face Mesh** | 468 points | Face contour, lips, eyebrows, nose, sparse mesh dots |
+| **Iris** | 10 points | Left + right iris ring + pupil center |
+| **Hands** | 21 × 2 | Finger joints, gestures, AR effects |
+
 ## Features
 
-### Hand Tracking
-- **21-point landmark detection** at 0.7 confidence via MediaPipe WASM
 - **9 gesture recognition**: Open Palm, Fist, Peace, Thumbs Up, Pinch, Pointing, Rock, Three, Four
-- **Multi-hand support** — tracks up to 2 hands simultaneously
+- **Landmark smoothing** — exponential moving average eliminates jitter
+- **Per-tracker toggles** — enable/disable Body, Face, Hands, Iris independently
+- **AR effects on hands** — concentric rotating arcs, glowing skeleton, particle trails
+- **Tracking score** — confidence % displayed on palm, always readable
+- **Sci-fi data panel** — finger states (EXT/FLD), hand span, gesture name
+- **5 color palettes** — `C` to cycle (Cyber Cyan, Neon Magenta, Toxic Green, Solar Gold, Ice Blue)
+- **Front/Rear camera switch**
+- **Video recording** — saves `.webm` to downloads
+- **Fullscreen mode**
 
-### AR Visuals
-- **Glowing skeleton** with per-finger neon colors
-- **3 concentric rotating arc rings** with orbiting marker dots
-- **Particle trail system** — neon particles emit from each fingertip
-- **Pinch ripple effect** — expanding shockwave rings on thumb-index contact
-- **Holographic scan line** sweeping across the viewport
-- **5 color palettes**: `C` to cycle (Cyber Cyan, Neon Magenta, Toxic Green, Solar Gold, Ice Blue)
+## Visual Style
 
-### Readable Text Overlays (dual-canvas fix)
-- Tracking score `%` on the palm — always left-to-right readable
-- Sci-fi data panel with finger states (EXT/FLD), hand span, gesture name
-- Gesture change badge notification
-
-### Camera & Recording
-- **Front / Rear camera switch** button
-- **Video recording** — captures screen as `.webm`, auto-downloads to your device
-- **Fullscreen mode** toggle
+| Element | Color |
+|---------|-------|
+| Body skeleton | Green `#00ff88` |
+| Face contour + eyes | White/cyan |
+| Iris ring | Magenta `#ff44aa` |
+| Hand skeleton | Palette neon (per-finger) |
+| AR arcs | Palette neon |
+| Text overlays | Always readable (dual-canvas) |
 
 ## Controls
 
@@ -39,6 +47,7 @@ Full-screen real-time hand tracking with a futuristic AR HUD overlay — runs en
 
 | Button | Action |
 |--------|--------|
+| BODY / FACE / HANDS / IRIS | Toggle each tracker on/off |
 | Camera icon | Switch front/rear camera |
 | Red dot | Start/stop recording |
 | Expand icon | Toggle fullscreen |
@@ -51,30 +60,15 @@ cd hand-tracking-ar
 python3 -m http.server 8080
 ```
 
-Open `http://localhost:8080` → click **START CAMERA**.
-
-## Deploy to GitHub Pages
-
-1. Push repo to GitHub
-2. **Settings → Pages** → Source: `Deploy from a branch` → Branch: `main` / `/ (root)`
-
-## How Text Mirroring Is Solved
-
-The app uses **two separate canvases**:
-
-| Canvas | CSS `scaleX(-1)` | Purpose |
-|--------|-----------------|---------|
-| `#overlay` | Yes (mirrored) | AR visuals — skeleton, particles, arcs, ripples |
-| `#text-layer` | No (normal) | All text — tracking score, data panel, gesture badge |
-
-Video is mirrored for natural selfie view. AR lines follow the mirrored video on the overlay canvas. Text is drawn on the un-mirrored text-layer at `(1 - landmarkX) * width` so it appears at the correct screen position and is always readable.
+Open `http://localhost:8080` → click **START TRACKING**.
 
 ## Tech Stack
 
-- [MediaPipe Hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) (WASM)
-- HTML5 Canvas 2D (dual canvas)
-- @mediapipe/camera_utils
-- MediaRecorder API (video capture)
+- [MediaPipe Hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) — 21-point hand landmarks
+- [MediaPipe Pose](https://developers.google.com/mediapipe/solutions/vision/pose_landmarker) — 33-point body pose
+- [MediaPipe Face Mesh](https://developers.google.com/mediapipe/solutions/vision/face_landmarker) — 468-point face + 10-point iris
+- HTML5 Canvas 2D (dual canvas for readable text)
+- MediaRecorder API
 
 ## License
 
