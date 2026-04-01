@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hand-Tracking AR Interface</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>HAND-TRACKING <span class="accent">AR</span></h1>
+      <div id="status">INITIALIZING...</div>
+    </header>
+
+    <div id="viewport">
+      <video id="webcam" autoplay playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div id="hud-top-left">
+        <div class="hud-row"><span class="hud-label">FPS</span><span id="fps">0</span></div>
+        <div class="hud-row"><span class="hud-label">HANDS</span><span id="hand-count">0</span></div>
+      </div>
+      <div id="hud-bottom">CLICK ANYWHERE TO START &bull; PRESS Q TO QUIT</div>
+    </div>
+
+    <footer>
+      <span>Built with MediaPipe + Canvas</span>
+      <a href="https://github.com" target="_blank">GitHub</a>
+    </footer>
+  </div>
+
+  <div id="start-overlay">
+    <div id="start-box">
+      <div class="pulse-ring"></div>
+      <button id="start-btn">START CAMERA</button>
+      <p>Allow webcam access to begin hand tracking</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="app.js"></script>
+</body>
+</html>
