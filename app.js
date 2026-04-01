@@ -76,6 +76,42 @@ function rr(c,x,y,w,h,r){c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+
 function log(msg){console.log(`[AR] ${msg}`);}
 
 // ═══════════════════════════════════════════════════════════════════
+//  LOW-LIGHT PREPROCESSING — brightens dark video for better detection
+// ═══════════════════════════════════════════════════════════════════
+
+const prepCanvas = document.createElement("canvas");
+const prepCtx = prepCanvas.getContext("2d", { willReadFrequently: true });
+
+function preprocessFrame(video) {
+  const w = video.videoWidth || 480;
+  const h = video.videoHeight || 360;
+  prepCanvas.width = w;
+  prepCanvas.height = h;
+
+  // draw video frame
+  prepCtx.drawImage(video, 0, 0, w, h);
+
+  // get pixel data and enhance
+  const imgData = prepCtx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+
+  // brightness boost + contrast stretch
+  const brightness = 40;  // add 40 to each channel
+  const contrast = 1.4;    // multiply contrast
+  const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
+
+  for (let i = 0; i < d.length; i += 4) {
+    // brightness + contrast
+    d[i]   = Math.min(255, Math.max(0, factor * (d[i]   - 128) + 128 + brightness));
+    d[i+1] = Math.min(255, Math.max(0, factor * (d[i+1] - 128) + 128 + brightness));
+    d[i+2] = Math.min(255, Math.max(0, factor * (d[i+2] - 128) + 128 + brightness));
+  }
+
+  prepCtx.putImageData(imgData, 0, 0);
+  return prepCanvas;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  LANDMARK SMOOTHING
 // ═══════════════════════════════════════════════════════════════════
 
@@ -410,22 +446,25 @@ let processingHands = false, processingPose = false, processingFace = false;
 async function frameLoop() {
   frameCount++;
 
+  // preprocess frame once for all models (brightness + contrast boost)
+  const input = preprocessFrame(vid);
+
   // Hands — every frame
   if (handsInst && modes.hands && !processingHands) {
     processingHands = true;
-    handsInst.send({ image: vid }).catch(() => {}).finally(() => { processingHands = false; });
+    handsInst.send({ image: input }).catch(() => {}).finally(() => { processingHands = false; });
   }
 
-  // Pose — every 3rd frame
-  if (poseInst && modes.pose && frameCount % 3 === 0 && !processingPose) {
+  // Pose — every 2nd frame
+  if (poseInst && modes.pose && frameCount % 2 === 0 && !processingPose) {
     processingPose = true;
-    poseInst.send({ image: vid }).catch(() => {}).finally(() => { processingPose = false; });
+    poseInst.send({ image: input }).catch(() => {}).finally(() => { processingPose = false; });
   }
 
-  // Face — every 3rd frame (offset by 1)
-  if (faceInst && (modes.face || modes.iris) && frameCount % 3 === 1 && !processingFace) {
+  // Face — every 2nd frame (offset by 1)
+  if (faceInst && (modes.face || modes.iris) && frameCount % 2 === 1 && !processingFace) {
     processingFace = true;
-    faceInst.send({ image: vid }).catch(() => {}).finally(() => { processingFace = false; });
+    faceInst.send({ image: input }).catch(() => {}).finally(() => { processingFace = false; });
   }
 
   frameLoopId = requestAnimationFrame(frameLoop);
@@ -500,24 +539,24 @@ async function start() {
     testStream.getTracks().forEach(t => t.stop()); // release test stream
     log("Camera permission granted.");
 
-    // 2) Load models sequentially
+    // 2) Load models sequentially — low thresholds for low-light reliability
     log("Loading Hands model...");
     handsInst = await loadMPModel("HANDS", Hands, "hands", {
       maxNumHands: 2, modelComplexity: 1,
-      minDetectionConfidence: 0.7, minTrackingConfidence: 0.6,
+      minDetectionConfidence: 0.4, minTrackingConfidence: 0.35,
     }, onHandResults);
 
     log("Loading Pose model...");
     poseInst = await loadMPModel("POSE", Pose, "pose", {
-      modelComplexity: 0, smoothLandmarks: true,
+      modelComplexity: 1, smoothLandmarks: true,
       enableSegmentation: false,
-      minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+      minDetectionConfidence: 0.35, minTrackingConfidence: 0.35,
     }, onPoseResults);
 
     log("Loading Face Mesh model...");
     faceInst = await loadMPModel("FACE", FaceMesh, "face_mesh", {
       maxNumFaces: 1, refineLandmarks: true,
-      minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+      minDetectionConfidence: 0.35, minTrackingConfidence: 0.35,
     }, onFaceResults);
 
     // 3) Start camera with direct getUserMedia
