@@ -2,87 +2,392 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Full-Body AR Tracker</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Web — Hand Tracker</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Courier New',monospace}
+    video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:0.18;filter:brightness(0.5) contrast(1.4)}
+    canvas{position:fixed;inset:0;width:100%;height:100%}
+
+    .hud{position:fixed;z-index:10;pointer-events:none;color:#00ffff;font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:0.7}
+    .hud-tl{top:24px;left:28px}
+    .hud-tr{top:24px;right:28px;text-align:right}
+    .hud-bl{bottom:24px;left:28px}
+    .hud-br{bottom:24px;right:28px;text-align:right}
+    .hud .label{color:#005555;font-size:9px;margin-bottom:2px}
+    .hud .value{color:#00ffff;text-shadow:0 0 8px rgba(0,255,255,0.5)}
+    .hud .value.purple{color:#cc44ff;text-shadow:0 0 14px rgba(204,68,255,0.6)}
+    .hud .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#00ff88;margin-right:6px;animation:blink 2s infinite}
+    .hud .dot.palm{background:#cc44ff}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+    .hud-line{height:1px;background:linear-gradient(90deg,#00ffff18,#00ffff05);margin:6px 0;width:130px}
+    .hud-br .hud-line{margin-left:auto;background:linear-gradient(90deg,#00ffff05,#00ffff18)}
+
+    #start-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.94);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:28px;backdrop-filter:blur(20px)}
+    #start-overlay.hidden{display:none}
+    #start-overlay h1{font-size:26px;letter-spacing:10px;color:#00ffff;text-shadow:0 0 30px rgba(0,255,255,0.3);font-weight:300}
+    #start-overlay p{color:#333;font-size:10px;letter-spacing:4px}
+    #start-btn{background:transparent;color:#00ffff;border:1px solid #00ffff;padding:14px 44px;font-size:12px;letter-spacing:5px;cursor:pointer;font-family:inherit;transition:all 0.3s}
+    #start-btn:hover{background:#00ffff0d;box-shadow:0 0 30px rgba(0,255,255,0.15)}
+  </style>
 </head>
 <body>
-  <div id="viewport">
-    <video id="webcam" autoplay playsinline muted></video>
-    <canvas id="overlay"></canvas>
-    <canvas id="text-layer"></canvas>
+  <video id="vid" autoplay playsinline muted></video>
+  <canvas id="c"></canvas>
 
-    <!-- HUD top-left -->
-    <div id="hud-top-left">
-      <div class="hud-row"><span class="hud-label">FPS</span><span id="fps">0</span></div>
-      <div class="hud-row"><span class="hud-label">HANDS</span><span id="hand-count">0</span></div>
-      <div class="hud-row"><span class="hud-label">GESTURE</span><span id="gesture-name">NONE</span></div>
-      <div class="hud-row"><span class="hud-label">POSE</span><span id="pose-status">OFF</span></div>
-      <div class="hud-row"><span class="hud-label">FACE</span><span id="face-status">OFF</span></div>
-      <div class="hud-row"><span class="hud-label">IRIS</span><span id="iris-status">OFF</span></div>
-    </div>
-
-    <!-- Title bar -->
-    <div id="title-bar">
-      <span class="title-text">FULL-BODY <span class="accent">AR</span></span>
-      <span id="status">INIT</span>
-    </div>
-
-    <!-- Mode toggles -->
-    <div id="mode-panel">
-      <button class="mode-btn active" id="tog-pose" title="Body Pose">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2.5"/><path d="M10 22V14l-4-4M14 22V14l4-4M7 10h10"/></svg>
-        <span>BODY</span>
-      </button>
-      <button class="mode-btn active" id="tog-face" title="Face Mesh">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/><path d="M8 15c1.5 1.5 6.5 1.5 8 0"/></svg>
-        <span>FACE</span>
-      </button>
-      <button class="mode-btn active" id="tog-hands" title="Hand Tracking">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a1 1 0 0 0-2 0M14 6V4a1 1 0 0 0-2 0v6M10 6V5a1 1 0 0 0-2 0v8M6 13V9a1 1 0 0 0-2 0v7a8 8 0 0 0 16 0v-3a1 1 0 0 0-2 0"/></svg>
-        <span>HANDS</span>
-      </button>
-      <button class="mode-btn active" id="tog-iris" title="Iris Tracking">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M2 12s4-8 10-8 10 8 10 8-4 8-10 8S2 12 2 12z"/></svg>
-        <span>IRIS</span>
-      </button>
-    </div>
-
-    <!-- Controls bottom-center -->
-    <div id="controls">
-      <button id="btn-camera" class="ctrl-btn" title="Switch Camera">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16V7a2 2 0 0 0-2-2h-3l-2-2H9L7 5H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"/><circle cx="12" cy="11" r="3"/></svg>
-      </button>
-      <button id="btn-record" class="ctrl-btn record-btn" title="Record">
-        <span class="rec-dot"></span>
-      </button>
-      <button id="btn-fullscreen" class="ctrl-btn" title="Fullscreen">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/></svg>
-      </button>
-    </div>
-
-    <!-- Record indicator -->
-    <div id="rec-indicator" class="hidden">
-      <span class="rec-blink"></span> REC <span id="rec-time">00:00</span>
-    </div>
+  <div class="hud hud-tl">
+    <div class="label">STATUS</div>
+    <div class="value" id="h-status"><span class="dot" id="h-dot"></span>SYSTEM ACTIVE</div>
+    <div class="hud-line"></div>
+    <div class="label" style="margin-top:10px">NEURAL LINK</div>
+    <div class="value" id="h-link">INITIALIZING</div>
   </div>
 
-  <!-- Start screen -->
+  <div class="hud hud-tr">
+    <div class="label">FRAMES</div>
+    <div class="value" id="h-fps">0 FPS</div>
+    <div class="hud-line" style="margin-left:auto"></div>
+    <div class="label" style="margin-top:10px">HANDS</div>
+    <div class="value" id="h-hands">0</div>
+    <div class="hud-line" style="margin-left:auto"></div>
+    <div class="label" style="margin-top:10px">MODE</div>
+    <div class="value" id="h-mode">NEURAL WEB</div>
+  </div>
+
+  <div class="hud hud-bl">
+    <div class="label">INPUT</div>
+    <div class="value" id="h-res">—</div>
+    <div class="hud-line"></div>
+    <div class="label" style="margin-top:10px">LATENCY</div>
+    <div class="value" id="h-lat">—</div>
+  </div>
+
+  <div class="hud hud-br">
+    <div class="label">CONNECTIONS</div>
+    <div class="value" id="h-conn">0</div>
+    <div class="hud-line" style="margin-left:auto"></div>
+    <div class="label" style="margin-top:10px">SIGNAL</div>
+    <div class="value" id="h-sig">—</div>
+  </div>
+
   <div id="start-overlay">
-    <div id="start-box">
-      <div class="pulse-ring"></div>
-      <h1>FULL-BODY <span class="accent">AR</span></h1>
-      <p class="subtitle">Face &bull; Eyes &bull; Hands &bull; Body Pose</p>
-      <button id="start-btn">START TRACKING</button>
-      <p>Allow webcam access for full-body tracking</p>
-    </div>
+    <h1>NEURAL WEB</h1>
+    <p>HAND-TRACKING INTERFACE</p>
+    <button id="start-btn">INITIALIZE</button>
   </div>
 
-  <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="app.js"></script>
+  <script>
+  // ═══════════════════════════════════════════════════════════════
+  //  NEURAL WEB — Single-file, MediaPipe + Canvas
+  // ═══════════════════════════════════════════════════════════════
+
+  const vid = document.getElementById("vid");
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const $ = id => document.getElementById(id);
+
+  let fps = 0, lastT = performance.now(), frameN = 0;
+  let hands = [], prevHands = [], particles = [];
+  let palmMode = false, flicker = 0, sendTime = 0;
+  let processing = false, mpHands = null, stream = null;
+
+  // ── Low-light preprocessing ──────────────────────────────────
+  const pc = document.createElement("canvas");
+  const px = pc.getContext("2d", { willReadFrequently: true });
+
+  function brighten(vid) {
+    const w = vid.videoWidth || 480, h = vid.videoHeight || 360;
+    if (pc.width !== w) { pc.width = w; pc.height = h; }
+    px.drawImage(vid, 0, 0, w, h);
+    const img = px.getImageData(0, 0, w, h), d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i]   = Math.min(255, d[i]   * 1.35 + 25);
+      d[i+1] = Math.min(255, d[i+1] * 1.35 + 25);
+      d[i+2] = Math.min(255, d[i+2] * 1.35 + 25);
+    }
+    px.putImageData(img, 0, 0);
+    return pc;
+  }
+
+  // ── Smoothing ────────────────────────────────────────────────
+  const sBuf = [];
+  function smooth(raw, a = 0.4) {
+    const res = [];
+    for (let i = 0; i < raw.length; i++) {
+      if (!sBuf[i]) sBuf[i] = raw[i].map(p => ({...p}));
+      const b = sBuf[i], s = [];
+      for (let j = 0; j < raw[i].length; j++) {
+        if (!b[j]) b[j] = {...raw[i][j]};
+        b[j].x += (raw[i][j].x - b[j].x) * a;
+        b[j].y += (raw[i][j].y - b[j].y) * a;
+        s.push({x: b[j].x, y: b[j].y, z: b[j].z || 0});
+      }
+      res.push(s);
+    }
+    sBuf.length = raw.length;
+    return res;
+  }
+
+  // ── Palm detection ───────────────────────────────────────────
+  function palmFacing(lm) {
+    const wz = lm[0].z || 0;
+    const tz = ((lm[4].z||0) + (lm[8].z||0) + (lm[12].z||0) + (lm[16].z||0) + (lm[20].z||0)) / 5;
+    const spread = Math.abs(lm[8].x - lm[20].x) + Math.abs(lm[4].x - lm[16].x);
+    return wz > tz - 0.015 && spread > 0.12;
+  }
+
+  // ── Particles ────────────────────────────────────────────────
+  function spawn(x, y, col, v) {
+    if (particles.length > 250) return;
+    const a = Math.random() * 6.283, sp = v * 80 + 0.3;
+    particles.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+      life: 1, dec: 0.02 + Math.random()*0.02, r: 1 + Math.random()*2, col });
+  }
+  function tickP() {
+    for (let i = particles.length-1; i >= 0; i--) {
+      const p = particles[i]; p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.97; p.vy *= 0.97; p.life -= p.dec;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+  }
+  function drawP() {
+    for (const p of particles) {
+      ctx.save(); ctx.globalAlpha = p.life * 0.65;
+      ctx.fillStyle = p.col; ctx.shadowColor = p.col; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.life, 0, 6.283); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //  DRAWING
+  // ═════════════════════════════════════════════════════════════
+
+  const SKELETON = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+
+  function draw(w, h) {
+    const rgb = palmMode ? "204,68,255" : "0,255,255";
+    const glow = palmMode ? 16 : 9;
+    const baseA = palmMode ? 0.32 : 0.18;
+    flicker += 0.04;
+
+    // subtle grid
+    ctx.save(); ctx.strokeStyle = "rgba(0,255,255,0.015)"; ctx.lineWidth = 0.5;
+    for (let x = 0; x < w; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for (let y = 0; y < h; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    ctx.restore();
+
+    // vignette
+    const vg = ctx.createRadialGradient(w/2,h/2,w*0.25,w/2,h/2,w*0.75);
+    vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,0.5)");
+    ctx.fillStyle = vg; ctx.fillRect(0,0,w,h);
+
+    if (hands.length === 0) return;
+
+    // ── Landmarks ──────────────────────────────────────────────
+    for (const lm of hands) {
+      for (let i = 0; i < 21; i++) {
+        const x = (1-lm[i].x)*w, y = lm[i].y*h;
+        const fl = 0.3 + 0.2 * Math.sin(flicker + i*0.3);
+        ctx.save();
+        ctx.globalAlpha = fl; ctx.fillStyle = `rgba(${rgb},1)`;
+        ctx.shadowColor = `rgba(${rgb},0.7)`; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(x,y,2.5,0,6.283); ctx.fill();
+        ctx.globalAlpha = 0.85; ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(x,y,1,0,6.283); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // ── Skeleton lines ─────────────────────────────────────────
+    ctx.save(); ctx.lineWidth = 0.7; ctx.lineCap = "round";
+    ctx.shadowColor = `rgba(${rgb},0.5)`; ctx.shadowBlur = glow;
+    for (const lm of hands) {
+      for (const [i,j] of SKELETON) {
+        const fl = 0.4 + 0.35 * Math.sin(flicker*2 + i*0.2 + j*0.1);
+        ctx.strokeStyle = `rgba(${rgb},${0.25 + 0.3*fl})`;
+        ctx.beginPath();
+        ctx.moveTo((1-lm[i].x)*w, lm[i].y*h);
+        ctx.lineTo((1-lm[j].x)*w, lm[j].y*h);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // ── NEURAL WEB: every A ↔ every B ──────────────────────────
+    let connN = 0;
+
+    if (hands.length >= 2) {
+      const A = hands[0], B = hands[1];
+      ctx.save(); ctx.lineWidth = 0.4; ctx.lineCap = "round"; ctx.shadowBlur = glow;
+
+      for (let i = 0; i < 21; i++) {
+        for (let j = 0; j < 21; j++) {
+          const ax = (1-A[i].x)*w, ay = A[i].y*h;
+          const bx = (1-B[j].x)*w, by = B[j].y*h;
+          const d = Math.hypot(ax-bx, ay-by);
+          const maxD = w * 0.55;
+          let a = Math.max(0, 1-d/maxD) * baseA;
+          const fl = 0.55 + 0.45 * Math.sin(flicker*2.5 + i*0.6 + j*0.4);
+          a *= fl;
+          if (a < 0.015) continue;
+          ctx.strokeStyle = `rgba(${rgb},${a})`;
+          ctx.shadowColor = `rgba(${rgb},${a*0.4})`;
+          ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+          connN++;
+        }
+      }
+      ctx.restore();
+
+    } else if (hands.length === 1) {
+      const lm = hands[0];
+      ctx.save(); ctx.lineWidth = 0.3; ctx.shadowBlur = glow * 0.5;
+      for (let i = 0; i < 21; i++) {
+        for (let j = i+2; j < 21; j++) {
+          const fl = 0.4 + 0.4 * Math.sin(flicker*1.5 + i*0.4 + j*0.3);
+          ctx.strokeStyle = `rgba(${rgb},${0.06*fl})`;
+          ctx.beginPath();
+          ctx.moveTo((1-lm[i].x)*w, lm[i].y*h);
+          ctx.lineTo((1-lm[j].x)*w, lm[j].y*h);
+          ctx.stroke();
+          connN++;
+        }
+      }
+      ctx.restore();
+    }
+    $("h-conn").textContent = connN;
+
+    // ── Motion particles ───────────────────────────────────────
+    if (prevHands.length > 0) {
+      for (let hi = 0; hi < hands.length; hi++) {
+        if (hi >= prevHands.length) break;
+        for (let i = 0; i < 21; i++) {
+          const v = Math.hypot(hands[hi][i].x-prevHands[hi][i].x, hands[hi][i].y-prevHands[hi][i].y);
+          if (v > 0.006) {
+            spawn((1-hands[hi][i].x)*w, hands[hi][i].y*h, `rgba(${rgb},1)`, v);
+          }
+        }
+      }
+    }
+    prevHands = hands.map(lm => lm.map(p => ({...p})));
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //  MEDIAPIPE CALLBACK
+  // ═════════════════════════════════════════════════════════════
+
+  function onRes(res) {
+    const lat = Math.round(performance.now() - sendTime);
+
+    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+      hands = smooth(res.multiHandLandmarks, 0.4);
+      $("h-hands").textContent = hands.length;
+      $("h-link").textContent = "ESTABLISHED";
+      $("h-sig").textContent = "STRONG";
+
+      let facing = false;
+      for (const lm of hands) if (palmFacing(lm)) { facing = true; break; }
+      palmMode = facing;
+
+      if (facing) {
+        $("h-mode").textContent = "PALM SYNC";
+        $("h-mode").className = "value purple";
+        $("h-dot").className = "dot palm";
+      } else {
+        $("h-mode").textContent = "NEURAL WEB";
+        $("h-mode").className = "value";
+        $("h-dot").className = "dot";
+      }
+    } else {
+      hands = []; sBuf.length = 0; prevHands = [];
+      $("h-hands").textContent = "0";
+      $("h-link").textContent = "SCANNING...";
+      $("h-link").className = "value";
+      $("h-conn").textContent = "0";
+      $("h-sig").textContent = "—";
+      $("h-mode").textContent = "NEURAL WEB";
+      $("h-mode").className = "value";
+      $("h-dot").className = "dot";
+      palmMode = false;
+    }
+    $("h-lat").textContent = lat + "ms";
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //  LOOPS
+  // ═════════════════════════════════════════════════════════════
+
+  function render() {
+    frameN++;
+    const now = performance.now(), dt = now - lastT; lastT = now;
+    if (dt > 0) fps = fps * 0.93 + (1000/dt) * 0.07;
+    if (frameN % 8 === 0) $("h-fps").textContent = Math.round(fps) + " FPS";
+
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+
+    ctx.clearRect(0,0,w,h);
+    tickP();
+    draw(w, h);
+    drawP();
+    requestAnimationFrame(render);
+  }
+
+  function frameLoop() {
+    if (!processing && vid.readyState >= 2) {
+      processing = true;
+      sendTime = performance.now();
+      mpHands.send({ image: brighten(vid) }).catch(() => {}).finally(() => { processing = false; });
+    }
+    requestAnimationFrame(frameLoop);
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  //  INIT
+  // ═════════════════════════════════════════════════════════════
+
+  $("start-btn").addEventListener("click", async () => {
+    $("start-overlay").classList.add("hidden");
+    $("h-link").textContent = "LOADING MODEL...";
+
+    mpHands = new Hands({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`
+    });
+    mpHands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.4, minTrackingConfidence: 0.35 });
+    mpHands.onResults(onRes);
+
+    // trigger init
+    const tc = document.createElement("canvas"); tc.width = 16; tc.height = 16;
+    try { mpHands.send({ image: tc }); } catch(e) {}
+
+    $("h-link").textContent = "CONNECTING CAMERA...";
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+    } catch(e) {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    }
+    vid.srcObject = stream;
+    await vid.play();
+
+    $("h-res").textContent = vid.videoWidth + "×" + vid.videoHeight;
+    $("h-link").textContent = "NEURAL LINK ESTABLISHED";
+
+    render();
+    frameLoop();
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "q" || e.key === "Q") {
+      stream?.getTracks().forEach(t => t.stop());
+      $("h-link").textContent = "DISCONNECTED";
+    }
+  });
+  </script>
 </body>
 </html>

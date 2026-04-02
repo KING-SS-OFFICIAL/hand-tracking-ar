@@ -1,56 +1,43 @@
-# Full-Body AR Tracker
+# Neural Web — Hand-Tracking Interface
 
-Real-time full-body tracking with AR overlays — face mesh, iris, hand gestures, body pose — runs entirely in the browser.
+A futuristic sci-fi hand-tracking visualization using MediaPipe and Canvas. Single HTML file, runs entirely in the browser.
 
 [![Live Demo](https://img.shields.io/badge/Live-Demo-00ffff?style=for-the-badge)](https://KING-SS-OFFICIAL.github.io/hand-tracking-ar)
 
-## Tracking Capabilities
+## The Concept
 
-| Tracker | Landmarks | What it tracks |
-|---------|-----------|----------------|
-| **Body Pose** | 33 points | Full skeleton — shoulders, elbows, wrists, hips, knees, ankles, face outline |
-| **Face Mesh** | 468 points | Face contour, lips, eyebrows, nose, sparse mesh dots |
-| **Iris** | 10 points | Left + right iris ring + pupil center |
-| **Hands** | 21 × 2 | Finger joints, gestures, AR effects |
+A deep black void. Neon-cyan points appear on your 21 hand landmarks. When two hands are detected, **every point connects to every point of the other hand** — 441 glowing lines forming a neural web between your palms.
+
+Move fast → particle trails ignite. Show your palms → electric purple surge, glow intensifies.
 
 ## Features
 
-- **9 gesture recognition**: Open Palm, Fist, Peace, Thumbs Up, Pinch, Pointing, Rock, Three, Four
-- **Landmark smoothing** — exponential moving average eliminates jitter
-- **Per-tracker toggles** — enable/disable Body, Face, Hands, Iris independently
-- **AR effects on hands** — concentric rotating arcs, glowing skeleton, particle trails
-- **Tracking score** — confidence % displayed on palm, always readable
-- **Sci-fi data panel** — finger states (EXT/FLD), hand span, gesture name
-- **5 color palettes** — `C` to cycle (Cyber Cyan, Neon Magenta, Toxic Green, Solar Gold, Ice Blue)
-- **Front/Rear camera switch**
-- **Video recording** — saves `.webm` to downloads
-- **Fullscreen mode**
+- **21-point hand tracking** per hand via MediaPipe WASM
+- **441 neural web connections** (21×21) between two hands
+- **Digital flicker** — each line pulses with unique sine-wave phase
+- **Palm detection** — lines shift cyan → electric purple when palms face camera
+- **Motion particles** — speed-based particle glow on fast hand movement
+- **Low-light preprocessing** — brightness + contrast boost for dark rooms
+- **Smoothed landmarks** — exponential moving average eliminates jitter
+- **Minimalist HUD** — four corners with System Status, FPS, Latency, Connections, Signal
+- **Mirrored webcam** — natural digital mirror feel
+- **Single file** — just `index.html`, no build step
 
 ## Visual Style
 
-| Element | Color |
-|---------|-------|
-| Body skeleton | Green `#00ff88` |
-| Face contour + eyes | White/cyan |
-| Iris ring | Magenta `#ff44aa` |
-| Hand skeleton | Palette neon (per-finger) |
-| AR arcs | Palette neon |
-| Text overlays | Always readable (dual-canvas) |
+| Element | Color | Effect |
+|---------|-------|--------|
+| Default lines | Cyan `#00ffff` | Glow + flicker |
+| Palm mode lines | Purple `#cc44ff` | Intensified glow |
+| Landmark dots | White core + colored glow | Pulse animation |
+| Background | Black + subtle grid | Vignette overlay |
+| HUD | Cyan monospace | Corner panels |
 
 ## Controls
 
 | Key | Action |
 |-----|--------|
 | `Q` | Stop camera |
-| `C` | Cycle color palette |
-| `S` | Toggle scan line |
-
-| Button | Action |
-|--------|--------|
-| BODY / FACE / HANDS / IRIS | Toggle each tracker on/off |
-| Camera icon | Switch front/rear camera |
-| Red dot | Start/stop recording |
-| Expand icon | Toggle fullscreen |
 
 ## Run Locally
 
@@ -60,15 +47,22 @@ cd hand-tracking-ar
 python3 -m http.server 8080
 ```
 
-Open `http://localhost:8080` → click **START TRACKING**.
+Open `http://localhost:8080` → click **INITIALIZE**.
+
+## How It Works
+
+1. **Camera** → `getUserMedia` with front-facing constraints
+2. **Preprocessing** → every frame is brightened (+25 brightness, 1.35× contrast) for low-light reliability
+3. **MediaPipe Hands** → detects up to 2 hands, 21 landmarks each
+4. **Smoothing** → EMA (alpha 0.4) on all coordinates
+5. **Neural Web** → for each pair of points across hands, draw a line with distance-based opacity and per-line flicker
+6. **Palm detection** → checks z-depth + finger spread to determine if palm faces camera → switches to purple mode
 
 ## Tech Stack
 
-- [MediaPipe Hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) — 21-point hand landmarks
-- [MediaPipe Pose](https://developers.google.com/mediapipe/solutions/vision/pose_landmarker) — 33-point body pose
-- [MediaPipe Face Mesh](https://developers.google.com/mediapipe/solutions/vision/face_landmarker) — 468-point face + 10-point iris
-- HTML5 Canvas 2D (dual canvas for readable text)
-- MediaRecorder API
+- [MediaPipe Hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) — WASM hand tracking
+- HTML5 Canvas 2D — all rendering
+- Vanilla JS — no frameworks, single file
 
 ## License
 
